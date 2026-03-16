@@ -1,0 +1,17 @@
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/bin/Debug/net8.0/SecureChat.Infrastructure.deps.json
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/bin/Debug/net8.0/SecureChat.Infrastructure.runtimeconfig.json
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/bin/Debug/net8.0/SecureChat.Infrastructure.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/bin/Debug/net8.0/SecureChat.Infrastructure.pdb
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/bin/Debug/net8.0/SecureChat.Domain.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/bin/Debug/net8.0/SecureChat.Domain.pdb
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.csproj.AssemblyReference.cache
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.AssemblyInfoInputs.cache
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.AssemblyInfo.cs
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.csproj.CoreCompileInputs.cache
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureCh.CBF9F69B.Up2Date
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/refint/SecureChat.Infrastructure.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.pdb
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.genruntimeconfig.cache
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/ref/SecureChat.Infrastructure.dll

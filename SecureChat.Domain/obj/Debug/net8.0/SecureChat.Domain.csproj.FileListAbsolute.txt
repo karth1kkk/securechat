@@ -1,0 +1,11 @@
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/bin/Debug/net8.0/SecureChat.Domain.deps.json
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/bin/Debug/net8.0/SecureChat.Domain.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/bin/Debug/net8.0/SecureChat.Domain.pdb
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.GeneratedMSBuildEditorConfig.editorconfig
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.AssemblyInfoInputs.cache
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.AssemblyInfo.cs
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.csproj.CoreCompileInputs.cache
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/refint/SecureChat.Domain.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.pdb
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/ref/SecureChat.Domain.dll
