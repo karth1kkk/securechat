@@ -15,3 +15,4 @@
 /Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.pdb
 /Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.genruntimeconfig.cache
 /Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/ref/SecureChat.Infrastructure.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Infrastructure/obj/Debug/net8.0/SecureChat.Infrastructure.sourcelink.json

@@ -9,3 +9,4 @@
 /Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/refint/SecureChat.Domain.dll
 /Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.pdb
 /Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/ref/SecureChat.Domain.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/obj/Debug/net8.0/SecureChat.Domain.sourcelink.json

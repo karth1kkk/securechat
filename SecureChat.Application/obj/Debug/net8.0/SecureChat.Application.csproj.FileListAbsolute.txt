@@ -13,3 +13,4 @@
 /Users/karth1kkk/Documents/Cloud/SecureChat.Application/obj/Debug/net8.0/refint/SecureChat.Application.dll
 /Users/karth1kkk/Documents/Cloud/SecureChat.Application/obj/Debug/net8.0/SecureChat.Application.pdb
 /Users/karth1kkk/Documents/Cloud/SecureChat.Application/obj/Debug/net8.0/ref/SecureChat.Application.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Application/obj/Debug/net8.0/SecureChat.Application.sourcelink.json

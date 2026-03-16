@@ -1,11 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "cFKay2eDqvQ=",
+  "dgSpecHash": "IGW7YH+DLlM=",
   "success": true,
   "projectFilePath": "/Users/karth1kkk/Documents/Cloud/SecureChat.Domain/SecureChat.Domain.csproj",
-  "expectedPackageFiles": [
-    "/Users/karth1kkk/.nuget/packages/microsoft.netcore.app.ref/8.0.24/microsoft.netcore.app.ref.8.0.24.nupkg.sha512",
-    "/Users/karth1kkk/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.24/microsoft.aspnetcore.app.ref.8.0.24.nupkg.sha512"
-  ],
+  "expectedPackageFiles": [],
   "logs": []
 }

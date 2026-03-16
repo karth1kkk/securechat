@@ -1,191 +1,55 @@
-## SecureChat Mobile Backend
+# SecureChat Mobile Backend
 
-SecureChat Mobile is a cybersecurity-focused messaging backend built with:
+SecureChat Mobile is a cybersecurity-focused messaging backend that combines GraphQL, JWT authentication, and SignalR for secure, real-time conversations. The API is built with ASP.NET Core 8 and Entity Framework Core talking to PostgreSQL, so it runs great locally and can be deployed to any cloud provider that can host .NET services.
 
-- ASP.NET Core 8 (minimal hosting model)
-- GraphQL (HotChocolate)
-- Entity Framework Core
-- PostgreSQL
-- JWT authentication
-- SignalR for real-time messaging
+## Highlights
 
-### Solution layout
+- **Authentication:** Register/login mutations issue JWT access and refresh tokens and record device sessions so each login can be audited.
+- **Messaging:** `SendMessage` encrypts content with `IAesEncryptionService` before persisting it and pushing it over the `ChatHub`.
+- **Security alerts:** New-device, new-IP, and suspicious-activity events are stored in the database and surfaced by GraphQL queries for the mobile client.
+- **SignalR:** The `/hubs/chat` endpoint wires each connection into conversation groups so clients can receive `ReceiveMessage` events in real time.
 
-- `SecureChat.Domain` – core entities and enums
-- `SecureChat.Application` – GraphQL types, DTOs, and service interfaces
-- `SecureChat.Infrastructure` – EF Core DbContext, configurations, and persistence
-- `SecureChat.Api` – ASP.NET Core host, GraphQL endpoint, SignalR hub, authentication
+## Solution layout
 
-### Getting started
+- `SecureChat.Domain` – core entities (users, messages, device sessions, security alerts).  
+- `SecureChat.Infrastructure` – EF Core `SecureChatDbContext`, migrations, and persistence helpers.  
+- `SecureChat.Application` – GraphQL types, DTOs, and support services (encryption, security helpers).  
+- `SecureChat.Api` – ASP.NET Core host with JWT authentication, GraphQL server, SignalR hub, and middleware.
 
-1. Install the .NET 8 SDK and PostgreSQL.
-2. Create a PostgreSQL database, e.g. `securechat_db`.
-3. Update the connection string in `SecureChat.Api/appsettings.Development.json`.
-4. From the solution root, run EF Core migrations:
+## Getting started
+
+1. Install the .NET 8 SDK and PostgreSQL (or run a Dockerized Postgres instance).
+2. Create the database, e.g. `securechat_db`, and edit `SecureChat.Api/appsettings.Development.json` or `appsettings.json` to match your credentials.
+3. From the solution root, run the migrations:
 
    ```bash
    dotnet ef migrations add InitialCreate -p SecureChat.Infrastructure -s SecureChat.Api
    dotnet ef database update -p SecureChat.Infrastructure -s SecureChat.Api
    ```
 
-5. Run the API:
+4. Launch the backend:
 
    ```bash
-   dotnet run --project SecureChat.Api
+   /usr/local/share/dotnet/dotnet run --project SecureChat.Api
    ```
 
-6. Open the GraphQL IDE at `/graphql` to explore queries and mutations.
+5. The GraphQL playground at `http://localhost:5002/graphql` lets you explore queries/mutations; the mobile client should connect to `http://192.168.0.106:5002/graphql` (see `SecureChatMobileApp/src/config.ts`), and SignalR embraces `/hubs/chat`.
 
-# Cloud-Based Smart Production & Inventory Monitoring System
+## GraphQL surface
 
-University cloud computing project – backend for a **manufacturing production, materials, machines, and warehouse inventory** system.
+- **Queries** (`GetUsers`, `GetConversations`, `GetMessages`, `GetSecurityAlerts`, `GetDeviceSessions`) are all paged, filtered, and sorted using HotChocolate’s helpers.  
+- **Mutations** (`RegisterUser`, `LoginUser`, `SendMessage`, `CreateConversation`, `ResolveSecurityAlert`, `RefreshToken`, `LogoutFromAllDevices`) drive the auth flow, message creation, and alert resolution.  
+- **Security**: The mutation arguments that need services are marked with `[Service]` so HotChocolate injects the EF context, config, SignalR hub, and encryption helpers rather than treating them as schema inputs.
 
-## Tech Stack
+## SignalR
 
-| Layer | Technology |
-|-------|------------|
-| Backend | ASP.NET Core 8 Web API |
-| API Style | REST + **GraphQL** (HotChocolate) |
-| Frontend | **Vue 3**, Vite, Vue Router, Pinia, Apollo GraphQL Client, TailwindCSS |
-| ORM | Entity Framework Core 8 |
-| Database | **PostgreSQL** |
-| Cloud | AWS (EC2, RDS, S3, CloudWatch) |
+Clients authenticate with the JWT and then join conversation groups via `ChatHub`. The hub simply exposes `JoinConversation` and the server pushes `ReceiveMessage` events after a message is persisted so subscribers stay in sync.
 
-## Architecture (Clean Architecture)
+## Deployment tips
 
-```
-src/SmartProductionInventory.Api/
-├── Controllers/       # REST API endpoints
-├── GraphQL/           # HotChocolate types & root Query
-├── Models/            # Domain entities
-├── DTOs/              # Request/response DTOs
-├── Services/          # Business logic
-├── Repositories/      # Data access (repository pattern)
-├── Data/              # DbContext & EF configuration
-├── Utilities/         # Cross-cutting (e.g. Audit)
-├── Program.cs
-└── appsettings.json
-```
-
-## Entity Model Summary
-
-| Entity | Purpose |
-|--------|---------|
-| **User** | Authentication; links to Role |
-| **Role** | Admin, Production Manager, Warehouse Staff |
-| **Supplier** | Raw material suppliers |
-| **RawMaterial** | Materials with quantity, reorder level, supplier |
-| **ProductionBatch** | Batch number, machine, start/end time, output quantity |
-| **BatchMaterial** | Assigned raw materials per batch |
-| **Machine** | Production equipment |
-| **MachineLog** | Machine ID, downtime reason, duration, production output |
-| **InventoryItem** | Finished goods, quantity, warehouse location |
-| **StockMovement** | In/Out/Transfer/Adjustment with reference |
-| **Report** | Metadata + S3 bucket/key for report files |
-| **AuditLog** | Material updates, batch creation, stock adjustments |
-
-## Running Locally
-
-### Prerequisites
-
-- .NET 8 SDK
-- PostgreSQL (local or Docker)
-- Node.js 18+ (for frontend)
-
-### Database
-
-1. Create database:
-   ```bash
-   createdb SmartProductionInventory
-   ```
-2. From project folder:
-   ```bash
-   cd src/SmartProductionInventory.Api
-   dotnet ef migrations add InitialCreate
-   dotnet ef database update
-   ```
-   (Requires: `dotnet tool install --global dotnet-ef`)
-
-### Run API
-
-```bash
-cd src/SmartProductionInventory.Api
-dotnet run
-```
-
-- **REST API**: http://localhost:5000  
-- **Swagger**: http://localhost:5000/swagger  
-- **GraphQL**: http://localhost:5000/graphql  
-
-### Run frontend (Vue 3)
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-- **App**: http://localhost:5173  
-- Proxy: `/graphql` → backend at port 5000  
-
-See `frontend/README.md` for structure, pages, and GraphQL usage.
-
-## AWS Deployment (Outline)
-
-- **Backend**: Deploy to **AWS EC2** (Linux) – e.g. run as systemd service or in Docker.
-- **Database**: Use **AWS RDS** PostgreSQL; set `ConnectionStrings:DefaultConnection` to RDS endpoint.
-- **Reports**: Upload report files to **AWS S3**; store metadata (bucket + key) in `Reports` table.
-- **Monitoring**: Use **AWS CloudWatch** for logs and metrics (e.g. via Serilog sink or AWS SDK).
-
-## Example REST Endpoints
-
-- `GET /api/ProductionBatches/{id}` – get batch by ID  
-- `GET /api/ProductionBatches/by-number/{batchNumber}`  
-- `GET /api/ProductionBatches/by-status/{status}`  
-- `GET /api/ProductionBatches/by-date-range?from=...&to=...`  
-- `POST /api/ProductionBatches` – create batch (body: `CreateProductionBatchRequest`)  
-- `PUT /api/ProductionBatches/{id}` – update batch  
-- `DELETE /api/ProductionBatches/{id}`  
-- `GET /api/Health` – health check  
-
-## GraphQL API (HotChocolate)
-
-**Endpoint**: `POST /graphql` — use the Banana Cake Pop IDE at http://localhost:5000/graphql to explore the schema and run operations.
-
-### Queries
-
-| Query | Description |
-|-------|-------------|
-| `getRawMaterials(activeOnly)` | Raw materials; each includes **isLowStock** when quantity &lt; reorder level |
-| `getSuppliers(activeOnly)` | Suppliers |
-| `getProductionBatches(limit)` | Production batches |
-| `getMachines(activeOnly)` | Machines |
-| `getMachineLogs(machineId, limit)` | Machine logs (downtime, output) |
-| `getInventoryItems(activeOnly)` | Inventory items; each includes **isLowStock** |
-| `getProductionAnalytics(from, to)` | **Production efficiency**: total batches completed, average output, machine downtime % |
-
-### Mutations (all create AuditLog: action, user, timestamp, affected record ID)
-
-| Mutation | Description |
-|----------|-------------|
-| `createRawMaterial(input, userId)` | Create raw material |
-| `updateMaterialStock(input, userId)` | Update raw material stock → creates **StockMovement** |
-| `createProductionBatch(input, userId)` | Create production batch |
-| `startProductionBatch(batchId, userId)` | Set batch status to InProgress, set start time |
-| `completeProductionBatch(input, userId)` | Set completion time, output quantity, status Completed |
-| `logMachineDowntime(input, userId)` | Log machine downtime (duration in minutes) |
-| `addInventoryStock(input, userId)` | Add stock → creates **StockMovement** |
-| `adjustInventoryStock(input, userId)` | Set inventory quantity → creates **StockMovement** |
-| `generateProductionReport(input)` | Create report metadata with S3 key |
-
-### Features
-
-- **Low stock alerts**: `RawMaterialType` and `InventoryItemType` expose `isLowStock` (true when quantity &lt; reorder level).
-- **Production analytics**: `getProductionAnalytics` returns total batches completed, average production output, and machine downtime percentage for a date range.
-- **Inventory movement tracking**: Every stock update (raw material or inventory) creates a `StockMovement` record.
-- **Audit logging**: Every mutation writes to `AuditLogs` with action, entity type, entity ID, optional user, and timestamp.
-
-Example schema and types: see `src/SmartProductionInventory.Api/GraphQL/schema.example.graphql`.
+- Keep the JWT key/issuer/audience in environment variables on your cloud host instead of committing them.  
+- Point `SecureChat.Api/appsettings.json` at your cloud PostgreSQL (or MariaDB if you swap providers later).  
+- Ensure your hosting platform allows port 5002 (or whatever you configure via `ASPNETCORE_URLS`), and keep SignalR traffic tunneled through `/hubs/chat`.
 
 ## License
 

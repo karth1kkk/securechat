@@ -77,3 +77,5 @@
 /Users/karth1kkk/Documents/Cloud/SecureChat.Api/obj/Debug/net8.0/SecureChat.Api.pdb
 /Users/karth1kkk/Documents/Cloud/SecureChat.Api/obj/Debug/net8.0/SecureChat.Api.genruntimeconfig.cache
 /Users/karth1kkk/Documents/Cloud/SecureChat.Api/obj/Debug/net8.0/ref/SecureChat.Api.dll
+/Users/karth1kkk/Documents/Cloud/SecureChat.Api/obj/Debug/net8.0/SecureChat.Api.sourcelink.json
+/Users/karth1kkk/Documents/Cloud/SecureChat.Api/bin/Debug/net8.0/appsettings.json

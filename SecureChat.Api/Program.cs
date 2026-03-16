@@ -15,6 +15,8 @@ using SecureChat.Domain.Entities;
 using SecureChat.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
+var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0:5002";
+builder.WebHost.UseUrls(urls);
 
 builder.Services.AddDbContext<SecureChatDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -79,31 +81,31 @@ public class Query
     [UseProjection]
     [UseFiltering]
     [UseSorting]
-    public IQueryable<User> GetUsers(SecureChatDbContext db) => db.Users;
+    public IQueryable<User> GetUsers([Service] SecureChatDbContext db) => db.Users;
 
     [UsePaging]
     [UseProjection]
     [UseFiltering]
     [UseSorting]
-    public IQueryable<Conversation> GetConversations(SecureChatDbContext db) => db.Conversations;
+    public IQueryable<Conversation> GetConversations([Service] SecureChatDbContext db) => db.Conversations;
 
     [UsePaging]
     [UseProjection]
     [UseFiltering]
     [UseSorting]
-    public IQueryable<Message> GetMessages(SecureChatDbContext db) => db.Messages;
+    public IQueryable<Message> GetMessages([Service] SecureChatDbContext db) => db.Messages;
 
     [UsePaging]
     [UseProjection]
     [UseFiltering]
     [UseSorting]
-    public IQueryable<SecurityAlert> GetSecurityAlerts(SecureChatDbContext db) => db.SecurityAlerts;
+    public IQueryable<SecurityAlert> GetSecurityAlerts([Service] SecureChatDbContext db) => db.SecurityAlerts;
 
     [UsePaging]
     [UseProjection]
     [UseFiltering]
     [UseSorting]
-    public IQueryable<DeviceSession> GetDeviceSessions(SecureChatDbContext db) => db.DeviceSessions;
+    public IQueryable<DeviceSession> GetDeviceSessions([Service] SecureChatDbContext db) => db.DeviceSessions;
 }
 
 public class Mutation
@@ -113,7 +115,7 @@ public class Mutation
         string email,
         string password,
         string publicKey,
-        SecureChatDbContext db)
+        [Service] SecureChatDbContext db)
     {
         // NOTE: replace with a strong password hashing algorithm in production.
         var passwordHash = Convert.ToBase64String(Encoding.UTF8.GetBytes(password));
@@ -138,9 +140,9 @@ public class Mutation
     public async Task<AuthPayload> LoginUser(
         string usernameOrEmail,
         string password,
-        SecureChatDbContext db,
-        IConfiguration config,
-        IHttpContextAccessor httpContextAccessor)
+        [Service] SecureChatDbContext db,
+        [Service] IConfiguration config,
+        [Service] IHttpContextAccessor httpContextAccessor)
     {
         var user = await db.Users
             .FirstOrDefaultAsync(u =>
@@ -258,12 +260,15 @@ public class Mutation
     public async Task<Message> SendMessage(
         Guid conversationId,
         string content,
-        ClaimsPrincipal claimsPrincipal,
-        SecureChatDbContext db,
-        IHubContext<ChatHub> hubContext,
-        IAesEncryptionService encryptionService,
-        IConfiguration config)
+        [Service] SecureChatDbContext db,
+        [Service] IHubContext<ChatHub> hubContext,
+        [Service] IAesEncryptionService encryptionService,
+        [Service] IConfiguration config,
+        [Service] IHttpContextAccessor httpContextAccessor)
     {
+        var claimsPrincipal = httpContextAccessor.HttpContext?.User
+                              ?? throw new GraphQLException("Unauthorized");
+
         var userIdClaim = claimsPrincipal.FindFirstValue(JwtRegisteredClaimNames.Sub)
                          ?? throw new GraphQLException("Unauthorized");
 
@@ -290,7 +295,7 @@ public class Mutation
 
     public async Task<Conversation> CreateConversation(
         bool isGroup,
-        SecureChatDbContext db)
+        [Service] SecureChatDbContext db)
     {
         var conversation = new Conversation
         {
@@ -306,7 +311,7 @@ public class Mutation
 
     public async Task<SecurityAlert> ResolveSecurityAlert(
         Guid alertId,
-        SecureChatDbContext db)
+        [Service] SecureChatDbContext db)
     {
         var alert = await db.SecurityAlerts.FirstOrDefaultAsync(a => a.Id == alertId)
                     ?? throw new GraphQLException("Alert not found");
@@ -318,8 +323,8 @@ public class Mutation
 
     public async Task<AuthPayload> RefreshToken(
         string refreshToken,
-        SecureChatDbContext db,
-        IConfiguration config)
+        [Service] SecureChatDbContext db,
+        [Service] IConfiguration config)
     {
         var stored = await db.RefreshTokens
             .Include(r => r.User)
@@ -362,9 +367,12 @@ public class Mutation
     }
 
     public async Task<bool> LogoutFromAllDevices(
-        ClaimsPrincipal claimsPrincipal,
-        SecureChatDbContext db)
+        [Service] SecureChatDbContext db,
+        [Service] IHttpContextAccessor httpContextAccessor)
     {
+        var claimsPrincipal = httpContextAccessor.HttpContext?.User
+                              ?? throw new GraphQLException("Unauthorized");
+
         var userIdClaim = claimsPrincipal.FindFirstValue(JwtRegisteredClaimNames.Sub)
                          ?? throw new GraphQLException("Unauthorized");
 
@@ -429,4 +437,3 @@ public class ChatHub : Hub
     public Task JoinConversation(string conversationId) =>
         Groups.AddToGroupAsync(Context.ConnectionId, conversationId);
 }
-
