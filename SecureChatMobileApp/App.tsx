@@ -1,19 +1,22 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ApolloProvider } from '@apollo/client';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { apolloClient } from './graphql/client';
 import { ChatListScreen } from './screens/ChatListScreen';
 import { ChatScreen } from './screens/ChatScreen';
 import { NewChatScreen } from './screens/NewChatScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SecurityCenterScreen } from './screens/SecurityCenterScreen';
-import { sessionService } from './services/sessionService';
+import { sessionService, SessionRecord } from './services/sessionService';
 import { pinService } from './services/pinService';
 import { PinLock } from './components/PinLock';
 import { RootStackParamList } from './navigation/types';
+import { REGISTER_ANONYMOUS } from './graphql/mutations';
+import { GRAPHQL_URL } from './config';
+import { ApolloError } from '@apollo/client';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -23,20 +26,71 @@ export default function App() {
   const [hasPin, setHasPin] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await sessionService.ensureSession();
-        setSessionReady(true);
-        const storedPin = await pinService.getPin();
-        setHasPin(!!storedPin);
-        setLocked(true);
-      } catch (error) {
-        console.error('Secure session init failed', error);
-        setSessionError('Could not initialise the secure session. Restart the app to try again.');
+  const ensureRemoteRegistration = useCallback(async (session: SessionRecord) => {
+    // Always register on startup.
+    //
+    // Why: the backend commonly runs with an in-memory DB during development, so a backend
+    // restart forgets all users. The client may still have a stored sessionId/jwtToken and
+    // would otherwise skip registration, causing `userBySessionId` lookups to return null.
+    //
+    // This is safe because the backend `registerAnonymous` is idempotent by publicKey
+    // (same publicKey => same user/sessionId).
+
+    const { data } = await apolloClient.mutate<
+      { registerAnonymous: { userId: string; sessionId: string; publicKey: string; token: string } },
+      { input: { publicKey: string; deviceName: string } }
+    >({
+      mutation: REGISTER_ANONYMOUS,
+      variables: {
+        input: {
+          publicKey: session.publicKey,
+          deviceName: session.deviceName
+        }
       }
-    })();
+    });
+
+    const result = data?.registerAnonymous;
+    if (!result) {
+      throw new Error('Unable to register session with SecureChat.');
+    }
+
+    const updatedSession: SessionRecord = {
+      ...session,
+      sessionId: result.sessionId,
+      publicKey: result.publicKey,
+      userId: result.userId,
+      jwtToken: result.token
+    };
+
+    await sessionService.updateSession(updatedSession);
+    return updatedSession;
   }, []);
+
+  const initializeSession = useCallback(async () => {
+    setSessionError(null);
+    setSessionReady(false);
+    try {
+      const session = await sessionService.ensureSession();
+      await ensureRemoteRegistration(session);
+      setSessionReady(true);
+      const storedPin = await pinService.getPin();
+      setHasPin(!!storedPin);
+      setLocked(true);
+    } catch (error) {
+      if (error instanceof ApolloError) {
+        console.error('Apollo graphQLErrors', JSON.stringify(error.graphQLErrors, null, 2));
+        console.error('Apollo networkError', error.networkError);
+      }
+      console.error('Secure session init failed', error);
+      const baseUrl = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
+      const source = error instanceof Error ? error.message : 'Unable to reach the backend.';
+      setSessionError(`${source} Ensure ${baseUrl} is running and tap retry.`);
+    }
+  }, [ensureRemoteRegistration]);
+
+  useEffect(() => {
+    initializeSession();
+  }, [initializeSession]);
 
   const handleUnlock = async (pin: string) => {
     const verified = await pinService.verifyPin(pin);
@@ -64,6 +118,9 @@ export default function App() {
       <View style={styles.errorContainer}>
         <Text style={styles.errorTitle}>Session unavailable</Text>
         <Text style={styles.errorMessage}>{sessionError}</Text>
+        <Pressable style={styles.errorButton} onPress={initializeSession}>
+          <Text style={styles.errorButtonText}>Retry</Text>
+        </Pressable>
       </View>
     );
   }
@@ -111,8 +168,7 @@ const styles = StyleSheet.create({
   errorMessage: {
     color: '#f5f5f5',
     textAlign: 'center'
-  }
-,
+  },
   loadingContainer: {
     flex: 1,
     backgroundColor: '#0b0b0d',
@@ -122,5 +178,16 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#ffffff',
     marginTop: 12
+  },
+  errorButton: {
+    marginTop: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    backgroundColor: '#1a9cff'
+  },
+  errorButtonText: {
+    color: '#ffffff',
+    fontWeight: '600'
   }
 });

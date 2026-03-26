@@ -2,6 +2,7 @@ using System;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using SecureChatBackend.Application.Interfaces;
 
 namespace SecureChatBackend.Hubs;
@@ -32,8 +33,9 @@ public sealed class MessagingHub : Hub<IMessagingClient>
 
     private Guid GetCurrentUserId()
     {
-        var sub = Context.User?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-        if (sub == null || !Guid.TryParse(sub, out var userId))
+        var userIdClaim = Context.User?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                           ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
         {
             throw new HubException("Invalid authentication token.");
         }

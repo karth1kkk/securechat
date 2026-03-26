@@ -22,6 +22,15 @@ public sealed class UserRepository : IUserRepository
         return _context.Users.Include(u => u.Devices).FirstOrDefaultAsync(u => u.SessionId == sessionId, cancellationToken);
     }
 
+    public Task<User?> GetByPublicKeyAsync(string publicKey, CancellationToken cancellationToken = default)
+    {
+        // Public keys should identify the same device identity; if the user re-registers,
+        // we want to reuse the existing user record/sessionId instead of generating a new one.
+        return _context.Users
+            .OrderByDescending(u => u.CreatedAt)
+            .FirstOrDefaultAsync(u => u.PublicKey == publicKey, cancellationToken);
+    }
+
     public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return _context.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);

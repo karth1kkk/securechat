@@ -12,7 +12,7 @@ export const GET_USER_BY_SESSION_ID = gql`
 `;
 
 export const GET_MESSAGES = gql`
-  query GetMessages($conversationId: ID!, $limit: Int, $since: DateTime) {
+  query GetMessages($conversationId: UUID!, $limit: Int, $since: DateTime) {
     getMessagesAsync(conversationId: $conversationId, limit: $limit, since: $since) {
       id
       conversationId
@@ -24,6 +24,49 @@ export const GET_MESSAGES = gql`
       signature
       createdAt
       expiryTime
+    }
+  }
+`;
+
+export const MY_CONVERSATIONS = gql`
+  query MyConversationsAsync {
+    myConversationsAsync {
+      id
+      isGroup
+      createdAt
+      participants {
+        userId
+        publicKey
+        sessionId
+      }
+    }
+  }
+`;
+
+export const MY_CONVERSATION_REQUESTS = gql`
+  query MyConversationRequestsAsync {
+    myConversationRequestsAsync {
+      id
+      isGroup
+      createdAt
+      participants {
+        userId
+        publicKey
+        sessionId
+      }
+    }
+  }
+`;
+
+export const CONVERSATION_BY_ID = gql`
+  query ConversationById($conversationId: UUID!) {
+    conversationById(conversationId: $conversationId) {
+      id
+      participants {
+        userId
+        publicKey
+        sessionId
+      }
     }
   }
 `;

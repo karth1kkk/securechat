@@ -30,6 +30,56 @@ public sealed class UserService : IUserService
 
     public async Task<SessionRegistrationResult> RegisterAnonymousAsync(string publicKey, string deviceName, CancellationToken cancellationToken = default)
     {
+        // Identity stability across key rotation:
+        // - We treat `deviceName` as the stable device identity (per local installation).
+        // - If the same device re-registers with a new public key, we update the user record
+        //   (sessionId/userId stay the same).
+
+        // 1) Fast path: deviceName already registered -> update user public key
+        var existingDevice = await _deviceRepository.GetByDeviceNameAsync(deviceName, cancellationToken);
+        if (existingDevice != null && existingDevice.User != null)
+        {
+            existingDevice.User.PublicKey = publicKey;
+            existingDevice.LastActive = DateTime.UtcNow;
+
+            _userRepository.Update(existingDevice.User);
+            _deviceRepository.Update(existingDevice);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            var token = _tokenService.GenerateToken(existingDevice.User);
+            return new SessionRegistrationResult(existingDevice.User.Id, existingDevice.User.SessionId, existingDevice.User.PublicKey, token);
+        }
+
+        // 2) Compatibility path: same public key -> reuse stable user/sessionId
+        var existingUser = await _userRepository.GetByPublicKeyAsync(publicKey, cancellationToken);
+        if (existingUser != null)
+        {
+            var existingDeviceForUser = await _deviceRepository.GetByUserIdAndNameAsync(existingUser.Id, deviceName, cancellationToken);
+            if (existingDeviceForUser == null)
+            {
+                await _deviceRepository.AddAsync(new Device
+                {
+                    UserId = existingUser.Id,
+                    DeviceName = deviceName,
+                    LastActive = DateTime.UtcNow
+                }, cancellationToken);
+            }
+            else
+            {
+                existingDeviceForUser.LastActive = DateTime.UtcNow;
+                _deviceRepository.Update(existingDeviceForUser);
+            }
+
+            // Ensure stored public key matches this registration.
+            existingUser.PublicKey = publicKey;
+            _userRepository.Update(existingUser);
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            var token = _tokenService.GenerateToken(existingUser);
+            return new SessionRegistrationResult(existingUser.Id, existingUser.SessionId, existingUser.PublicKey, token);
+        }
+
+        // 3) New device/user
         var sessionId = _sessionIdGenerator.GenerateSessionId();
         var user = new User
         {
@@ -48,9 +98,9 @@ public sealed class UserService : IUserService
 
         await _deviceRepository.AddAsync(device, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        var token = _tokenService.GenerateToken(user);
+        var newToken = _tokenService.GenerateToken(user);
 
-        return new SessionRegistrationResult(user.Id, user.SessionId, user.PublicKey, token);
+        return new SessionRegistrationResult(user.Id, user.SessionId, user.PublicKey, newToken);
     }
 
     public Task<User?> GetBySessionIdAsync(string sessionId, CancellationToken cancellationToken = default)

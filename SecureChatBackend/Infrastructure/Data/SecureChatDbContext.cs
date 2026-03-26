@@ -24,6 +24,8 @@ public sealed class SecureChatDbContext : DbContext
         {
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.SessionId).IsUnique();
+            // Public keys are stable per-device identity; use them for idempotent registration.
+            entity.HasIndex(x => x.PublicKey);
             entity.Property(x => x.SessionId).IsRequired().HasMaxLength(66);
             entity.Property(x => x.PublicKey).IsRequired();
             entity.Property(x => x.CreatedAt).IsRequired();
@@ -49,6 +51,7 @@ public sealed class SecureChatDbContext : DbContext
             entity.HasKey(x => new { x.ConversationId, x.UserId });
             entity.HasOne(x => x.Conversation).WithMany(x => x.Participants).HasForeignKey(x => x.ConversationId);
             entity.HasOne(x => x.User).WithMany(x => x.ConversationParticipants).HasForeignKey(x => x.UserId);
+            entity.Property(x => x.IsAccepted).IsRequired();
         });
 
         modelBuilder.Entity<Message>(entity =>

@@ -22,6 +22,13 @@ public sealed class DeviceRepository : IDeviceRepository
         return _context.Devices.FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceName == deviceName, cancellationToken);
     }
 
+    public Task<Device?> GetByDeviceNameAsync(string deviceName, CancellationToken cancellationToken = default)
+    {
+        return _context.Devices
+            .Include(d => d.User)
+            .FirstOrDefaultAsync(d => d.DeviceName == deviceName, cancellationToken);
+    }
+
     public Task AddAsync(Device device, CancellationToken cancellationToken = default)
     {
         return _context.Devices.AddAsync(device, cancellationToken).AsTask();

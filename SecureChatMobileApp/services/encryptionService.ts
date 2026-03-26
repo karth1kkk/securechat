@@ -23,14 +23,23 @@ const readPublicKey = (value: string) => {
 
 const readPrivateKey = (value: string) => {
   const asn1 = forge.asn1.fromDer(decodeBase64(value));
-  return forge.pki.privateKeyFromAsn1(asn1);
+  // Support both:
+  // - PKCS#1 RSAPrivateKey (preferred; node-forge parses reliably)
+  // - PKCS#8 PrivateKeyInfo (legacy values created by earlier code)
+  try {
+    return forge.pki.privateKeyFromAsn1(asn1); // PKCS#1 path
+  } catch {
+    const privateKeyInfo = forge.pki.privateKeyInfoFromAsn1(asn1); // PKCS#8 path
+    return forge.pki.privateKeyFromAsn1(privateKeyInfo.privateKey);
+  }
 };
 
-const toPublicKeyPem = (key: forge.pki.rsa.PublicKey) => encodeBase64(forge.asn1.toDer(forge.pki.publicKeyToAsn1(key)).getBytes());
-const toPrivateKeyDer = (key: forge.pki.rsa.PrivateKey) => {
+const toPublicKeyPem = (key: any) => encodeBase64(forge.asn1.toDer(forge.pki.publicKeyToAsn1(key)).getBytes());
+const toPrivateKeyDer = (key: any) => {
+  // Store as PKCS#1 to avoid cross-format parsing issues on decrypt.
+  // `readPrivateKey` remains backward compatible with PKCS#8 values.
   const pkcs1 = forge.pki.privateKeyToAsn1(key);
-  const pkcs8 = forge.pki.wrapRsaPrivateKey(pkcs1);
-  return encodeBase64(forge.asn1.toDer(pkcs8).getBytes());
+  return encodeBase64(forge.asn1.toDer(pkcs1).getBytes());
 };
 
 export const encryptionService = {
@@ -99,7 +108,8 @@ export const encryptionService = {
   signMessage(privateKeyBase64: string, payload: string) {
     const privateKey = readPrivateKey(privateKeyBase64);
     const md = forge.md.sha256.create();
-    md.update(payload, 'utf8');
+    // Payload is raw bytes (ciphertext), not UTF-8 text.
+    md.update(payload, 'raw');
     const signature = privateKey.sign(md, 'RSASSA-PKCS1-V1_5');
     return encodeBase64(signature);
   },
@@ -107,7 +117,7 @@ export const encryptionService = {
   verifySignature(publicKeyBase64: string, payload: string, signature: string) {
     const publicKey = readPublicKey(publicKeyBase64);
     const md = forge.md.sha256.create();
-    md.update(payload, 'utf8');
+    md.update(payload, 'raw');
     return publicKey.verify(md.digest().getBytes(), decodeBase64(signature));
   }
 };

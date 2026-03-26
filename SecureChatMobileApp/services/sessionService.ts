@@ -7,6 +7,7 @@ const SESSION_ID_LENGTH = 66;
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
 export interface SessionRecord {
+  userId?: string;
   sessionId: string;
   publicKey: string;
   privateKey: string;
@@ -35,7 +36,23 @@ export const sessionService = {
 
   async ensureSession(): Promise<SessionRecord> {
     const existing = await this.getSession();
-    if (existing) {
+    // Secure storage can contain stale/corrupted JSON across app reloads; validate runtime shape.
+    if (
+      existing &&
+      typeof existing.sessionId === 'string' &&
+      typeof existing.publicKey === 'string' &&
+      typeof existing.privateKey === 'string' &&
+      typeof existing.createdAt === 'number' &&
+      typeof existing.deviceName === 'string'
+    ) {
+      // Old versions used a constant deviceName ("Mobile Device"). Make it stable+unique
+      // per local session so backend identity survives key rotation.
+      if (existing.deviceName === 'Mobile Device') {
+        const patched: SessionRecord = { ...existing, deviceName: `device-${existing.sessionId}` };
+        await this.updateSession(patched);
+        return patched;
+      }
+
       return existing;
     }
 
@@ -46,7 +63,7 @@ export const sessionService = {
       publicKey: keys.publicKey,
       privateKey: keys.privateKey,
       createdAt: Date.now(),
-      deviceName: 'Mobile Device'
+      deviceName: `device-${sessionId}`
     };
 
     await secureStore.setItem(SESSION_KEY, JSON.stringify(session));

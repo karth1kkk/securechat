@@ -8,6 +8,9 @@ import { SEND_MESSAGE } from '../graphql/mutations';
 import { ChatBubble } from '../components/ChatBubble';
 import { SignalRService } from '../services/signalrService';
 import { RootStackParamList } from '../navigation/types';
+import { SessionBanner } from '../components/SessionBanner';
+import { useQuery } from '@apollo/client';
+import { CONVERSATION_BY_ID } from '../graphql/queries';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -26,6 +29,29 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
   const [session, setSession] = useState<SessionRecord | null>(null);
   const client = useApolloClient();
   const signalR = useRef(new SignalRService());
+  const {
+    data: conversationData,
+    loading: conversationLoading,
+    error: conversationError,
+    refetch: refetchConversation
+  } = useQuery(CONVERSATION_BY_ID, {
+    variables: { conversationId },
+    fetchPolicy: 'network-only'
+  });
+
+  const decodeJwtSub = (token: string): string | null => {
+    try {
+      const payload = token.split('.')[1];
+      const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+      const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+      // @ts-ignore - atob exists in browser/web builds.
+      const json = atob(normalized + padding);
+      const parsed = JSON.parse(json);
+      return parsed?.sub ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
     let canceled = false;
@@ -36,14 +62,35 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
         return;
       }
       setSession(current);
+      if (!current.jwtToken) {
+        console.error('SignalR start skipped: missing jwtToken in session.');
+        return;
+      }
+
+      const currentUserId = current.userId ?? decodeJwtSub(current.jwtToken);
+
       await signalR.current.start(current.jwtToken);
       await signalR.current.joinConversation(conversationId);
+
+      const privateKey = current.privateKey;
       signalR.current.onEncryptedMessage((payload) => {
+        // Skip messages we already optimistically rendered.
+        if (currentUserId && payload.senderId === currentUserId) {
+          return;
+        }
+
+        let plaintext = '[unable to decrypt]';
+        try {
+          plaintext = encryptionService.decryptMessage(payload, privateKey);
+        } catch (e) {
+          console.error('Decrypt failed', e);
+        }
+
         setMessages((prev) => [
           ...prev,
           {
-            id: payload.ciphertext,
-            content: '[encrypted message]',
+            id: payload.id ?? `${payload.senderId}-${Date.now()}-${Math.random()}`,
+            content: plaintext,
             isOutgoing: false,
             createdAt: new Date().toISOString()
           }
@@ -67,11 +114,53 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
       return;
     }
 
-    const encrypted = encryptionService.encryptMessage(input.trim(), current.publicKey, current.privateKey);
+    if (!current.jwtToken) {
+      console.error('Missing jwtToken; cannot determine recipient participant.');
+      return;
+    }
+
+    // Ensure we have the participant key material before encrypting.
+    let currentConversation = conversationData?.conversationById;
+    if (!currentConversation && refetchConversation) {
+      try {
+        const res = await refetchConversation();
+        currentConversation = res.data?.conversationById;
+      } catch (e) {
+        console.error('Failed to refetch conversationById before send', e);
+      }
+    }
+
+    const currentUserId = current.userId ?? decodeJwtSub(current.jwtToken);
+    const conversation = currentConversation;
+
+    let recipientPublicKey: string | null = null;
+    if (conversation) {
+      if (currentUserId) {
+        recipientPublicKey = conversation.participants.find((p: any) => p.userId !== currentUserId)?.publicKey ?? null;
+      }
+      if (!recipientPublicKey && current.sessionId) {
+        // Fallback: some dev flows can cause sessionId drift; this only applies if we couldn't parse JWT.
+        recipientPublicKey =
+          conversation.participants.find((p: any) => p.sessionId !== current.sessionId)?.publicKey ?? null;
+      }
+    }
+    if (!recipientPublicKey) {
+      console.error('Missing recipient public key for conversation.', {
+        conversationLoaded: !!conversation,
+        conversationLoading,
+        conversationError,
+        currentUserId,
+        currentSessionId: current.sessionId
+      });
+      return;
+    }
+
+    // Encrypt to the *other* participant so they can decrypt with their private key.
+    const encrypted = encryptionService.encryptMessage(input.trim(), recipientPublicKey, current.privateKey);
     setMessages((prev) => [
       ...prev,
       {
-        id: `${Date.now()}`,
+        id: `${Date.now()}-${Math.random()}`,
         content: input.trim(),
         isOutgoing: true,
         createdAt: new Date().toISOString()
@@ -99,10 +188,13 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Conversation</Text>
+      {session && <SessionBanner sessionId={session.sessionId} />}
       <FlatList
         data={messages}
         keyExtractor={(msg) => msg.id}
-        renderItem={({ item }) => <ChatBubble text={item.content} isOutgoing={item.isOutgoing} />}
+        renderItem={({ item }) => (
+          <ChatBubble key={item.id} text={item.content} isOutgoing={item.isOutgoing} />
+        )}
         contentContainerStyle={styles.thread}
       />
       <View style={styles.expiryRow}>
@@ -123,7 +215,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
           value={input}
           onChangeText={setInput}
         />
-        <Pressable style={styles.sendButton} onPress={handleSend}>
+        <Pressable
+          style={[styles.sendButton, (conversationLoading || !session || !!conversationError) && { opacity: 0.6 }]}
+          onPress={handleSend}
+          disabled={conversationLoading || !!conversationError}
+        >
           <Text style={styles.sendText}>Send</Text>
         </Pressable>
       </View>

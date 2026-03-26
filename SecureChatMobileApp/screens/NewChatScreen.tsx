@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient } from '@apollo/client';
-import { CREATE_CONVERSATION } from '../graphql/mutations';
+import { CREATE_CONVERSATION_REQUEST } from '../graphql/mutations';
 import { GET_USER_BY_SESSION_ID } from '../graphql/queries';
 import { RootStackParamList } from '../navigation/types';
 
@@ -31,16 +31,19 @@ export const NewChatScreen: React.FC<NativeStackScreenProps<RootStackParamList, 
       }
 
       const { data: mutationData } = await client.mutate({
-        mutation: CREATE_CONVERSATION,
+        mutation: CREATE_CONVERSATION_REQUEST,
         variables: {
           input: {
-            participantIds: [target.id],
-            isGroup: false
+            targetUserId: target.id
           }
         }
       });
-      const conversationId = mutationData?.createConversation?.id;
-      navigation.navigate('Chat', { conversationId: conversationId ?? `session-${trimmed}` });
+      const conversationId = mutationData?.createConversationRequest?.id;
+      if (conversationId) {
+        navigation.navigate('Chat', { conversationId: conversationId });
+        return;
+      }
+      setStatus('Unable to create chat request. Try again.');
     } catch (error) {
       setStatus('Unable to start chat yet, try again later.');
     }
@@ -58,7 +61,7 @@ export const NewChatScreen: React.FC<NativeStackScreenProps<RootStackParamList, 
       />
       {status ? <Text style={styles.status}>{status}</Text> : null}
       <Pressable style={styles.button} onPress={handleCreate}>
-        <Text style={styles.buttonText}>Start Encrypted Session</Text>
+        <Text style={styles.buttonText}>Request Secure Chat</Text>
       </Pressable>
     </View>
   );

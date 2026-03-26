@@ -25,6 +25,28 @@ export const CREATE_CONVERSATION = gql`
   }
 `;
 
+export const CREATE_CONVERSATION_REQUEST = gql`
+  mutation CreateConversationRequest($input: CreateConversationRequestInput!) {
+    createConversationRequest(input: $input) {
+      id
+    }
+  }
+`;
+
+export const ACCEPT_CONVERSATION_REQUEST = gql`
+  mutation AcceptConversationRequest($input: AcceptConversationRequestInput!) {
+    acceptConversationRequest(input: $input) {
+      id
+    }
+  }
+`;
+
+export const DECLINE_CONVERSATION_REQUEST = gql`
+  mutation DeclineConversationRequest($input: DeclineConversationRequestInput!) {
+    declineConversationRequest(input: $input)
+  }
+`;
+
 export const SEND_MESSAGE = gql`
   mutation SendMessage($input: SendMessageInput!) {
     sendMessage(input: $input) {

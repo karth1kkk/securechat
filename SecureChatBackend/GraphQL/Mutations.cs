@@ -14,38 +14,36 @@ namespace SecureChatBackend.GraphQL;
 
 public sealed class Mutation
 {
-    private readonly IUserService _userService;
-    private readonly IConversationService _conversationService;
-    private readonly IMessageService _messageService;
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public Mutation(IUserService userService, IConversationService conversationService, IMessageService messageService, IHttpContextAccessor httpContextAccessor)
-    {
-        _userService = userService;
-        _conversationService = conversationService;
-        _messageService = messageService;
-        _httpContextAccessor = httpContextAccessor;
-    }
-
-    public Task<SessionRegistrationResult> RegisterAnonymousAsync(RegisterUserInput input, CancellationToken cancellationToken = default)
+    public Task<SessionRegistrationResult> RegisterAnonymousAsync(
+        [Service] IUserService userService,
+        RegisterUserInput input,
+        CancellationToken cancellationToken = default)
     {
         var deviceName = string.IsNullOrWhiteSpace(input.DeviceName) ? "unknown" : input.DeviceName;
-        return _userService.RegisterAnonymousAsync(input.PublicKey, deviceName, cancellationToken);
+        return userService.RegisterAnonymousAsync(input.PublicKey, deviceName, cancellationToken);
     }
 
     [Authorize]
-    public Task<ConversationDto> CreateConversationAsync(CreateConversationInput input, CancellationToken cancellationToken = default)
+    public Task<ConversationDto> CreateConversationAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CreateConversationInput input,
+        CancellationToken cancellationToken = default)
     {
-        var userId = GetCurrentUserId();
+        var userId = GetCurrentUserId(httpContextAccessor);
         var participants = input.ParticipantIds.Append(userId).Distinct();
-        return _conversationService.CreateConversationAsync(participants, input.IsGroup, cancellationToken);
+        return conversationService.CreateConversationAsync(participants, input.IsGroup, cancellationToken);
     }
 
     [Authorize]
-    public Task<MessageDto> SendMessageAsync(SendMessageInput input, CancellationToken cancellationToken = default)
+    public Task<MessageDto> SendMessageAsync(
+        [Service] IMessageService messageService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        SendMessageInput input,
+        CancellationToken cancellationToken = default)
     {
-        var userId = GetCurrentUserId();
-        return _messageService.SendMessageAsync(
+        var userId = GetCurrentUserId(httpContextAccessor);
+        return messageService.SendMessageAsync(
             input.ConversationId,
             userId,
             input.EncryptedContent,
@@ -57,16 +55,71 @@ public sealed class Mutation
             cancellationToken);
     }
 
-    private Guid GetCurrentUserId()
+    [Authorize]
+    public Task<ConversationDto> CreateConversationRequestAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CreateConversationRequestInput input,
+        CancellationToken cancellationToken = default)
     {
-        var context = _httpContextAccessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
+        var requesterId = GetCurrentUserId(httpContextAccessor);
+        return conversationService.CreateConversationRequestAsync(requesterId, input.TargetUserId, cancellationToken);
+    }
+
+    [Authorize]
+    public Task<ConversationDto> AcceptConversationRequestAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        AcceptConversationRequestInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetCurrentUserId(httpContextAccessor);
+        // Update state then fetch updated conversation by id.
+        return HandleAcceptAndFetch(conversationService, input.ConversationId, userId, cancellationToken);
+    }
+
+    private async Task<ConversationDto> HandleAcceptAndFetch(
+        IConversationService conversationService,
+        Guid conversationId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await conversationService.AcceptConversationRequestAsync(conversationId, userId, cancellationToken);
+        // After acceptance, conversation is treated as accepted for that user.
+        // We can fetch via GetConversationsAsync and pick the match.
+        var accepted = await conversationService.GetConversationsAsync(userId, isAccepted: true, cancellationToken);
+        var match = accepted.FirstOrDefault(c => c.Id == conversationId);
+        if (match == null)
+        {
+            // Fallback: if query didn't include due to timing, surface a clear error.
+            throw new InvalidOperationException("Accepted conversation not found.");
+        }
+        return match;
+    }
+
+    [Authorize]
+    public async Task<bool> DeclineConversationRequestAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        DeclineConversationRequestInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetCurrentUserId(httpContextAccessor);
+        await conversationService.DeclineConversationRequestAsync(input.ConversationId, userId, cancellationToken);
+        return true;
+    }
+
+    private static Guid GetCurrentUserId(IHttpContextAccessor httpContextAccessor)
+    {
+        var context = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
         return ParseUserId(context.User);
     }
 
     private static Guid ParseUserId(ClaimsPrincipal user)
     {
-        var sub = user.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-        if (sub == null || !Guid.TryParse(sub, out var userId))
+        var userIdClaim = user.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                           ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
         {
             throw new InvalidOperationException("User identifier is missing from claims.");
         }

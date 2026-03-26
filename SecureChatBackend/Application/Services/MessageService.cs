@@ -41,7 +41,7 @@ public sealed class MessageService : IMessageService
         CancellationToken cancellationToken = default)
     {
         var conversation = await _conversationRepository.GetByIdAsync(conversationId, cancellationToken);
-        if (conversation == null || !conversation.Participants.Any(p => p.UserId == senderId))
+        if (conversation == null || !conversation.Participants.Any(p => p.UserId == senderId && p.IsAccepted))
         {
             throw new InvalidOperationException("Sender is not a participant in the conversation.");
         }
@@ -81,7 +81,7 @@ public sealed class MessageService : IMessageService
     public async Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid conversationId, Guid requesterId, int limit, DateTime? since, CancellationToken cancellationToken = default)
     {
         var conversation = await _conversationRepository.GetByIdAsync(conversationId, cancellationToken);
-        if (conversation == null || !conversation.Participants.Any(p => p.UserId == requesterId))
+        if (conversation == null || !conversation.Participants.Any(p => p.UserId == requesterId && p.IsAccepted))
         {
             throw new InvalidOperationException("Requester is not a participant in the conversation.");
         }

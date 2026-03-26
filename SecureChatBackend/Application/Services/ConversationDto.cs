@@ -21,12 +21,14 @@ public sealed class ConversationDto
 
 public sealed class ParticipantDto
 {
-    public ParticipantDto(Guid userId, string publicKey)
+    public ParticipantDto(Guid userId, string publicKey, string sessionId)
     {
         UserId = userId;
         PublicKey = publicKey;
+        SessionId = sessionId;
     }
 
     public Guid UserId { get; }
     public string PublicKey { get; }
+    public string SessionId { get; }
 }

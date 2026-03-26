@@ -14,21 +14,13 @@ namespace SecureChatBackend.GraphQL;
 
 public sealed class Query
 {
-    private readonly IUserService _userService;
-    private readonly IMessageService _messageService;
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public Query(IUserService userService, IMessageService messageService, IHttpContextAccessor httpContextAccessor)
-    {
-        _userService = userService;
-        _messageService = messageService;
-        _httpContextAccessor = httpContextAccessor;
-    }
-
     [GraphQLName("userBySessionId")]
-    public async Task<UserDto?> GetUserBySessionIdAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<UserDto?> GetUserBySessionIdAsync(
+        [Service] IUserService userService,
+        string sessionId,
+        CancellationToken cancellationToken = default)
     {
-        var user = await _userService.GetBySessionIdAsync(sessionId, cancellationToken);
+        var user = await userService.GetBySessionIdAsync(sessionId, cancellationToken);
         if (user == null)
         {
             return null;
@@ -38,27 +30,92 @@ public sealed class Query
     }
 
     [Authorize]
-    public Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid conversationId, int limit = 50, DateTime? since = null, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MessageDto>> GetMessagesAsync(
+        [Service] IMessageService messageService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        Guid conversationId,
+        int limit = 50,
+        DateTime? since = null,
+        CancellationToken cancellationToken = default)
     {
         var clampedLimit = Math.Clamp(limit, 1, 200);
-        var userId = GetCurrentUserId();
-        return _messageService.GetMessagesAsync(conversationId, userId, clampedLimit, since, cancellationToken);
-    }
-
-    private Guid GetCurrentUserId()
-    {
-        var context = _httpContextAccessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
-        return ParseUserId(context.User);
-    }
-
-    private static Guid ParseUserId(ClaimsPrincipal user)
-    {
-        var sub = user.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-        if (sub == null || !Guid.TryParse(sub, out var userId))
+        var context = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
+        var userIdClaim = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                           ?? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
         {
             throw new InvalidOperationException("User identifier is missing from claims.");
         }
 
-        return userId;
+        return messageService.GetMessagesAsync(conversationId, userId, clampedLimit, since, cancellationToken);
+    }
+
+    [GraphQLName("myConversationsAsync")]
+    [Authorize]
+    public Task<IReadOnlyList<ConversationDto>> MyConversationsAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken = default)
+    {
+        var context = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
+        var userIdClaim = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                           ?? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            throw new InvalidOperationException("User identifier is missing from claims.");
+        }
+
+        return conversationService.GetConversationsAsync(userId, isAccepted: true, cancellationToken);
+    }
+
+    [GraphQLName("myConversationRequestsAsync")]
+    [Authorize]
+    public Task<IReadOnlyList<ConversationDto>> MyConversationRequestsAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CancellationToken cancellationToken = default)
+    {
+        var context = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
+        var userIdClaim = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                           ?? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            throw new InvalidOperationException("User identifier is missing from claims.");
+        }
+
+        return conversationService.GetConversationsAsync(userId, isAccepted: false, cancellationToken);
+    }
+
+    [GraphQLName("conversationById")]
+    [Authorize]
+    public async Task<ConversationDto?> GetConversationByIdAsync(
+        [Service] IConversationRepository conversationRepository,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        Guid conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        var context = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("HttpContext is not available.");
+        var userIdClaim = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                           ?? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            throw new InvalidOperationException("User identifier is missing from claims.");
+        }
+
+        var conversation = await conversationRepository.GetByIdAsync(conversationId, cancellationToken);
+        if (conversation == null)
+        {
+            return null;
+        }
+
+        if (!conversation.Participants.Any(p => p.UserId == userId && p.IsAccepted))
+        {
+            throw new InvalidOperationException("Requester is not a participant in the conversation.");
+        }
+
+        var participants = conversation.Participants
+            .Select(p => new ParticipantDto(p.UserId, p.User.PublicKey, p.User.SessionId))
+            .ToList();
+        return new ConversationDto(conversation.Id, conversation.IsGroup, conversation.CreatedAt, participants);
     }
 }
