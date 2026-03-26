@@ -2,7 +2,7 @@ import { gql } from '@apollo/client';
 
 export const REGISTER_ANONYMOUS = gql`
   mutation RegisterAnonymous($input: RegisterUserInput!) {
-    registerAnonymousAsync(input: $input) {
+    registerAnonymous(input: $input) {
       userId
       sessionId
       publicKey
@@ -13,7 +13,7 @@ export const REGISTER_ANONYMOUS = gql`
 
 export const CREATE_CONVERSATION = gql`
   mutation CreateConversation($input: CreateConversationInput!) {
-    createConversationAsync(input: $input) {
+    createConversation(input: $input) {
       id
       isGroup
       createdAt
@@ -27,7 +27,7 @@ export const CREATE_CONVERSATION = gql`
 
 export const SEND_MESSAGE = gql`
   mutation SendMessage($input: SendMessageInput!) {
-    sendMessageAsync(input: $input) {
+    sendMessage(input: $input) {
       id
       conversationId
       senderId

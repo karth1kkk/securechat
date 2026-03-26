@@ -4,6 +4,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using HotChocolate;
 using HotChocolate.Authorization;
 using Microsoft.AspNetCore.Http;
 using SecureChatBackend.Application.Interfaces;
@@ -24,6 +25,7 @@ public sealed class Query
         _httpContextAccessor = httpContextAccessor;
     }
 
+    [GraphQLName("userBySessionId")]
     public async Task<UserDto?> GetUserBySessionIdAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         var user = await _userService.GetBySessionIdAsync(sessionId, cancellationToken);

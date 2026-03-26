@@ -1,7 +1,6 @@
 import { HubConnection, HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 import { EncryptedMessage } from './encryptionService';
-
-const SIGNALR_URL = 'http://localhost:5000/hubs/messaging';
+import { SIGNALR_URL } from '../config';
 
 export class SignalRService {
   private connection: HubConnection | null = null;

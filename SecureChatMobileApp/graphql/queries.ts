@@ -2,7 +2,7 @@ import { gql } from '@apollo/client';
 
 export const GET_USER_BY_SESSION_ID = gql`
   query GetUserBySessionId($sessionId: String!) {
-    getUserBySessionIdAsync(sessionId: $sessionId) {
+    userBySessionId(sessionId: $sessionId) {
       id
       sessionId
       publicKey

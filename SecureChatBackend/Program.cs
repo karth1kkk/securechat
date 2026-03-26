@@ -23,7 +23,13 @@ builder.WebHost.UseUrls("http://localhost:5002");
 builder.Configuration.AddEnvironmentVariables();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-if (!string.IsNullOrWhiteSpace(connectionString))
+var useInMemory = builder.Configuration.GetValue<bool>("Database:UseInMemory");
+if (useInMemory)
+{
+    Console.WriteLine("Development mode: using in-memory database.");
+    builder.Services.AddDbContext<SecureChatDbContext>(options => options.UseInMemoryDatabase("SecureChat"));
+}
+else if (!string.IsNullOrWhiteSpace(connectionString))
 {
     builder.Services.AddDbContext<SecureChatDbContext>(options => options.UseNpgsql(connectionString));
 }
@@ -103,6 +109,18 @@ builder.Services.AddSingleton<ITokenService, TokenService>();
 
 builder.Services.AddSignalR();
 
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:8081", "http://localhost:8082" };
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("default", policy =>
+    {
+        policy.WithOrigins(corsOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 builder.Services.AddGraphQLServer()
     .AddAuthorization()
     .AddQueryType<Query>()
@@ -111,10 +129,25 @@ builder.Services.AddGraphQLServer()
 var app = builder.Build();
 
 app.UseRateLimiter();
+app.UseRouting();
+app.UseCors("default");
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == HttpMethods.Options && context.Request.Path.StartsWithSegments("/graphql"))
+    {
+        context.Response.StatusCode = StatusCodes.Status204NoContent;
+        await context.Response.CompleteAsync();
+        return;
+    }
+
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGraphQL();
+app.MapGraphQL().RequireCors("default");
 app.MapHub<MessagingHub>("/hubs/messaging");
 
 app.Run();

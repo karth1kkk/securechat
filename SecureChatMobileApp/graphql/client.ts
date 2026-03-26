@@ -1,8 +1,9 @@
 import { ApolloClient, HttpLink, InMemoryCache } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 import { sessionService } from '../services/sessionService';
+import { GRAPHQL_URL } from '../config';
 
-const httpLink = new HttpLink({ uri: 'http://localhost:5000/graphql' });
+const httpLink = new HttpLink({ uri: GRAPHQL_URL });
 
 const authLink = setContext(async (_, { headers }) => {
   const session = await sessionService.getSession();

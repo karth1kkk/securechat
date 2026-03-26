@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient } from '@apollo/client';
 import { CREATE_CONVERSATION } from '../graphql/mutations';
+import { GET_USER_BY_SESSION_ID } from '../graphql/queries';
 import { RootStackParamList } from '../navigation/types';
 
 export const NewChatScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'NewChat'>> = ({ navigation }) => {
@@ -11,22 +12,35 @@ export const NewChatScreen: React.FC<NativeStackScreenProps<RootStackParamList, 
   const client = useApolloClient();
 
   const handleCreate = async () => {
-    if (!sessionId.trim()) {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
       setStatus('Enter a Session ID');
       return;
     }
 
     try {
-      await client.mutate({
+      const { data: userData } = await client.query({
+        query: GET_USER_BY_SESSION_ID,
+        variables: { sessionId: trimmed },
+        fetchPolicy: 'no-cache'
+      });
+      const target = userData?.userBySessionId;
+      if (!target) {
+        setStatus('No account found for that Session ID.');
+        return;
+      }
+
+      const { data: mutationData } = await client.mutate({
         mutation: CREATE_CONVERSATION,
         variables: {
           input: {
-            participantIds: [sessionId.trim()],
+            participantIds: [target.id],
             isGroup: false
           }
         }
       });
-      navigation.navigate('Chat', { conversationId: `session-${sessionId}` });
+      const conversationId = mutationData?.createConversation?.id;
+      navigation.navigate('Chat', { conversationId: conversationId ?? `session-${trimmed}` });
     } catch (error) {
       setStatus('Unable to start chat yet, try again later.');
     }
