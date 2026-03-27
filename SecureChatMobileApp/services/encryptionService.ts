@@ -52,21 +52,46 @@ export const encryptionService = {
   },
 
   encryptMessage(plaintext: string, recipientPublicKey: string, senderPrivateKey?: string): EncryptedMessage {
+    if (!plaintext || plaintext.trim().length === 0) {
+      throw new Error('Message must contain text before encryption.');
+    }
+
+    console.debug('INPUT MESSAGE:', plaintext);
+
     const aesKey = forge.random.getBytesSync(32);
     const iv = forge.random.getBytesSync(12);
     const cipher = forge.cipher.createCipher('AES-GCM', aesKey);
     cipher.start({ iv, tagLength: 128 });
     cipher.update(forge.util.createBuffer(plaintext, 'utf8'));
-    cipher.finish();
+    const finished = cipher.finish();
+    if (!finished) {
+      throw new Error('AES-GCM encryption failed to finish.');
+    }
+
+    const ciphertextBytes = cipher.output.getBytes();
+    if (!ciphertextBytes || ciphertextBytes.length === 0) {
+      throw new Error('Encryption produced an empty ciphertext.');
+    }
+
+    const tagBytes = cipher.mode.tag.getBytes();
+    if (!tagBytes || tagBytes.length === 0) {
+      throw new Error('AES-GCM tag generation failed.');
+    }
 
     const encryptedKey = this.encryptAesKey(recipientPublicKey, aesKey);
-    const signature = senderPrivateKey ? this.signMessage(senderPrivateKey, cipher.output.getBytes()) : undefined;
+    const signature = senderPrivateKey ? this.signMessage(senderPrivateKey, ciphertextBytes) : undefined;
+
+    const ciphertext = encodeBase64(ciphertextBytes);
+    const nonce = encodeBase64(iv);
+    const tag = encodeBase64(tagBytes);
+
+    console.debug('ENCRYPT RESULT:', { ciphertext, nonce, tag });
 
     return {
-      ciphertext: encodeBase64(cipher.output.getBytes()),
+      ciphertext,
       encryptedKey,
-      nonce: encodeBase64(iv),
-      tag: encodeBase64(cipher.mode.tag.getBytes()),
+      nonce,
+      tag,
       signature
     };
   },

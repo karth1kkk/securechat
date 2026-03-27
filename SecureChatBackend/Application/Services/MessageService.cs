@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using SecureChatBackend.Application.Interfaces;
 using SecureChatBackend.Domain.Entities;
 using SecureChatBackend.Hubs;
@@ -16,17 +17,20 @@ public sealed class MessageService : IMessageService
     private readonly IConversationRepository _conversationRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHubContext<MessagingHub, IMessagingClient> _hubContext;
+    private readonly ILogger<MessageService> _logger;
 
     public MessageService(
         IMessageRepository messageRepository,
         IConversationRepository conversationRepository,
         IUnitOfWork unitOfWork,
-        IHubContext<MessagingHub, IMessagingClient> hubContext)
+        IHubContext<MessagingHub, IMessagingClient> hubContext,
+        ILogger<MessageService> logger)
     {
         _messageRepository = messageRepository;
         _conversationRepository = conversationRepository;
         _unitOfWork = unitOfWork;
         _hubContext = hubContext;
+        _logger = logger;
     }
 
     public async Task<MessageDto> SendMessageAsync(
@@ -45,6 +49,12 @@ public sealed class MessageService : IMessageService
         {
             throw new InvalidOperationException("Sender is not a participant in the conversation.");
         }
+
+        _logger.LogDebug(
+            "SendMessageAsync received encryptedContent length={Length} nonce={Nonce} tag={Tag}",
+            encryptedContent.Length,
+            nonce,
+            tag);
 
         var message = new Message
         {

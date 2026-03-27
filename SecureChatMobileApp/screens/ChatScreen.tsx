@@ -74,6 +74,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
 
       const privateKey = current.privateKey;
       signalR.current.onEncryptedMessage((payload) => {
+        console.log('RECEIVED:', payload);
         // Skip messages we already optimistically rendered.
         if (currentUserId && payload.senderId === currentUserId) {
           return;
@@ -157,6 +158,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
 
     // Encrypt to the *other* participant so they can decrypt with their private key.
     const encrypted = encryptionService.encryptMessage(input.trim(), recipientPublicKey, current.privateKey);
+    if (!encrypted.ciphertext) {
+      throw new Error('Encryption failed: ciphertext is empty.');
+    }
+    console.log('ENCRYPTED:', {
+      ciphertext: encrypted.ciphertext,
+      iv: encrypted.nonce,
+      authTag: encrypted.tag
+    });
     setMessages((prev) => [
       ...prev,
       {

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.RateLimiting;
 using System;
@@ -163,7 +164,11 @@ builder.Services.AddScoped<IMessageService, MessageService>();
 builder.Services.AddSingleton<ISessionIdGenerator, SessionIdGenerator>();
 builder.Services.AddSingleton<ITokenService, TokenService>();
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    });
 
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:8081", "http://localhost:8082" };
 builder.Services.AddCors(options =>
