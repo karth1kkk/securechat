@@ -9,4 +9,5 @@ public interface IUserService
 {
     Task<SessionRegistrationResult> RegisterAnonymousAsync(string publicKey, string deviceName, CancellationToken cancellationToken = default);
     Task<User?> GetBySessionIdAsync(string sessionId, CancellationToken cancellationToken = default);
+    Task UpdateUsernameAsync(Guid userId, string? username, CancellationToken cancellationToken = default);
 }

@@ -1,27 +1,31 @@
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import { useTheme } from '../theme/ThemeContext';
 
 export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Settings'>> = ({ navigation }) => {
-  const [darkMode] = useState(true);
-  const [autoDelete, setAutoDelete] = useState(true);
+  const { palette } = useTheme();
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>App Lock</Text>
-      <Text style={styles.value}>PIN + biometric ready (optional)</Text>
-      <Text style={[styles.label, { marginTop: 24 }]}>Privacy defaults</Text>
-      <View style={styles.row}>
-        <Text style={styles.value}>Dark mode</Text>
-        <Switch value={darkMode} disabled />
-      </View>
-      <View style={styles.row}>
-        <Text style={styles.value}>Auto-delete after 30 days</Text>
-        <Switch value={autoDelete} onValueChange={setAutoDelete} />
-      </View>
-      <Pressable style={styles.button} onPress={() => navigation.navigate('SecurityCenter')}>
-        <Text style={styles.buttonText}>Security Center</Text>
+    <View style={[styles.container, { backgroundColor: palette.background }]}> 
+      <Text style={[styles.heading, { color: palette.text }]}>App Lock</Text>
+      <Text style={[styles.body, { color: palette.muted }]}>PIN + biometric ready (optional)</Text>
+      <View style={[styles.divider, { borderColor: palette.border }]} />
+      <Text style={[styles.heading, { color: palette.text }]}>Preferences</Text>
+      <Pressable
+        style={[styles.option, { borderColor: palette.border }]}
+        onPress={() => navigation.navigate('Profile')}
+      >
+        <Text style={[styles.optionText, { color: palette.text }]}>Profile & Theme</Text>
+        <Text style={[styles.optionMeta, { color: palette.muted }]}>Update username and accent</Text>
+      </Pressable>
+      <Pressable
+        style={[styles.option, { borderColor: palette.border }]}
+        onPress={() => navigation.navigate('SecurityCenter')}
+      >
+        <Text style={[styles.optionText, { color: palette.text }]}>Security Center</Text>
+        <Text style={[styles.optionMeta, { color: palette.muted }]}>View session identity and rotate keys</Text>
       </Pressable>
     </View>
   );
@@ -30,32 +34,33 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0b0d',
     padding: 16
   },
-  label: {
-    color: '#ffffff',
+  heading: {
     fontSize: 22,
-    marginBottom: 8
+    fontWeight: '600',
+    marginBottom: 4
   },
-  value: {
-    color: '#c0c0c0'
+  body: {
+    fontSize: 14,
+    marginBottom: 16
   },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16
+  divider: {
+    borderBottomWidth: 1,
+    marginVertical: 16
   },
-  button: {
-    marginTop: 32,
-    padding: 14,
+  option: {
+    borderWidth: 1,
     borderRadius: 12,
-    backgroundColor: '#1a9cff',
-    alignItems: 'center'
+    padding: 16,
+    marginBottom: 12
   },
-  buttonText: {
-    color: '#ffffff',
+  optionText: {
+    fontSize: 16,
     fontWeight: '600'
+  },
+  optionMeta: {
+    fontSize: 12,
+    marginTop: 4
   }
 });

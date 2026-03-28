@@ -107,4 +107,17 @@ public sealed class UserService : IUserService
     {
         return _userRepository.GetBySessionIdAsync(sessionId, cancellationToken);
     }
+
+    public async Task UpdateUsernameAsync(Guid userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user == null)
+        {
+            throw new InvalidOperationException("User not found.");
+        }
+
+        user.Username = string.IsNullOrWhiteSpace(username) ? null : username.Trim();
+        _userRepository.Update(user);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
 }

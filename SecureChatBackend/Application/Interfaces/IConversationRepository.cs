@@ -11,5 +11,6 @@ public interface IConversationRepository
     Task AddAsync(Conversation conversation, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Conversation>> GetByUserAsync(Guid userId, bool isAccepted, CancellationToken cancellationToken = default);
+    Task<Conversation?> GetBetweenUsersAsync(Guid userId, Guid otherId, bool requireAccepted, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid conversationId, CancellationToken cancellationToken = default);
 }

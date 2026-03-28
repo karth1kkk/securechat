@@ -1,16 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useApolloClient } from '@apollo/client';
+import { useApolloClient, useQuery } from '@apollo/client';
+import { useIsFocused } from '@react-navigation/native';
+import { SessionBanner } from '../components/SessionBanner';
+import { ChatBubble } from '../components/ChatBubble';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { encryptionService } from '../services/encryptionService';
-import { SEND_MESSAGE } from '../graphql/mutations';
-import { ChatBubble } from '../components/ChatBubble';
 import { SignalRService } from '../services/signalrService';
+import { GET_MESSAGES, CONVERSATION_BY_ID } from '../graphql/queries';
+import { SEND_MESSAGE } from '../graphql/mutations';
 import { RootStackParamList } from '../navigation/types';
-import { SessionBanner } from '../components/SessionBanner';
-import { useQuery } from '@apollo/client';
-import { CONVERSATION_BY_ID } from '../graphql/queries';
+import { useTheme } from '../theme/ThemeContext';
+import { preferencesService } from '../services/preferencesService';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -19,91 +21,191 @@ interface ThreadMessage {
   content: string;
   isOutgoing: boolean;
   createdAt: string;
+  status?: 'sending' | 'sent';
 }
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
+const threadCache = new Map<string, ThreadMessage[]>();
+
+export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   const { conversationId } = route.params;
-  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const { palette } = useTheme();
+  const [messages, setMessages] = useState<ThreadMessage[]>(() => threadCache.get(conversationId) ?? []);
   const [input, setInput] = useState('');
   const [expiry, setExpiry] = useState(0);
   const [session, setSession] = useState<SessionRecord | null>(null);
-  const client = useApolloClient();
+  const [localUsername, setLocalUsername] = useState<string | null>(null);
+  const flatListRef = useRef<FlatList<ThreadMessage>>(null);
   const signalR = useRef(new SignalRService());
-  const {
-    data: conversationData,
-    loading: conversationLoading,
-    error: conversationError,
-    refetch: refetchConversation
-  } = useQuery(CONVERSATION_BY_ID, {
+  const client = useApolloClient();
+  const isFocused = useIsFocused();
+
+  const { data: conversationData } = useQuery(CONVERSATION_BY_ID, {
     variables: { conversationId },
     fetchPolicy: 'network-only'
   });
 
-  const decodeJwtSub = (token: string): string | null => {
+  const { data: messagesData, refetch: refetchMessages } = useQuery(GET_MESSAGES, {
+    variables: { conversationId, limit: 200 },
+    fetchPolicy: 'network-only'
+  });
+
+  useEffect(() => {
+    sessionService.ensureSession().then(setSession);
+  }, []);
+
+  useEffect(() => {
+    if (isFocused) {
+      preferencesService.getUsername().then(setLocalUsername);
+    }
+  }, [isFocused]);
+
+  const decodeJwtSub = useCallback((token: string | undefined): string | null => {
+    if (!token) {
+      return null;
+    }
     try {
       const payload = token.split('.')[1];
       const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
-      // @ts-ignore - atob exists in browser/web builds.
-      const json = atob(normalized + padding);
+      const padded = `${normalized}${'='.repeat((4 - (normalized.length % 4)) % 4)}`;
+      const json = atob(padded);
       const parsed = JSON.parse(json);
       return parsed?.sub ?? null;
-    } catch {
+    } catch (error) {
+      console.error('Unable to decode jwt sub', error);
       return null;
     }
-  };
+  }, []);
+
+  const currentUserId = useMemo(() => {
+    return session?.userId ?? decodeJwtSub(session?.jwtToken);
+  }, [session, decodeJwtSub]);
+
+  const formatSession = (value?: string) => (value ? `${value.slice(0, 6)}…${value.slice(-6)}` : 'Unknown');
+
+  const addMessage = useCallback((message: ThreadMessage) => {
+    setMessages((previous) => {
+      if (previous.some((item) => item.id === message.id)) {
+        return previous;
+      }
+      return [...previous, message];
+    });
+  }, []);
+
+  const hasRefetchedOnFocus = useRef(false);
 
   useEffect(() => {
-    let canceled = false;
+    if (!isFocused) {
+      return;
+    }
+    if (!hasRefetchedOnFocus.current) {
+      hasRefetchedOnFocus.current = true;
+      return;
+    }
+    refetchMessages();
+  }, [isFocused, refetchMessages]);
+
+  useEffect(() => {
+    hasRefetchedOnFocus.current = false;
+    const cached = threadCache.get(conversationId);
+    if (
+      cached &&
+      cached.length === messages.length &&
+      cached.every((msg, index) => msg.id === messages[index]?.id)
+    ) {
+      return;
+    }
+    setMessages(cached ?? []);
+  }, [conversationId]);
+
+  useEffect(() => {
+    threadCache.set(conversationId, messages);
+  }, [conversationId, messages]);
+
+  useEffect(() => {
+    if (!session?.jwtToken) {
+      return;
+    }
 
     (async () => {
-      const current = await sessionService.ensureSession();
-      if (canceled) {
-        return;
-      }
-      setSession(current);
-      if (!current.jwtToken) {
-        console.error('SignalR start skipped: missing jwtToken in session.');
-        return;
-      }
-
-      const currentUserId = current.userId ?? decodeJwtSub(current.jwtToken);
-
-      await signalR.current.start(current.jwtToken);
+      await signalR.current.start(session.jwtToken);
       await signalR.current.joinConversation(conversationId);
-
-      const privateKey = current.privateKey;
       signalR.current.onEncryptedMessage((payload) => {
-        console.log('RECEIVED:', payload);
-        // Skip messages we already optimistically rendered.
-        if (currentUserId && payload.senderId === currentUserId) {
+        if (payload.senderId === currentUserId) {
           return;
         }
-
+        if (!session?.privateKey) {
+          return;
+        }
         let plaintext = '[unable to decrypt]';
         try {
-          plaintext = encryptionService.decryptMessage(payload, privateKey);
-        } catch (e) {
-          console.error('Decrypt failed', e);
+          plaintext = encryptionService.decryptMessage(payload, session.privateKey);
+        } catch (error) {
+          console.error('Decrypt failed', error);
         }
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: payload.id ?? `${payload.senderId}-${Date.now()}-${Math.random()}`,
-            content: plaintext,
-            isOutgoing: false,
-            createdAt: new Date().toISOString()
-          }
-        ]);
+        addMessage({
+          id: payload.id,
+          content: plaintext,
+          isOutgoing: false,
+          createdAt: new Date().toISOString(),
+          status: 'sent'
+        });
       });
     })();
 
     return () => {
-      canceled = true;
       signalR.current.stop();
     };
-  }, [conversationId]);
+  }, [conversationId, currentUserId, session, addMessage]);
+
+  useEffect(() => {
+    if (!messagesData?.getMessagesAsync || !session?.privateKey) {
+      return;
+    }
+
+    const decrypted = messagesData.getMessagesAsync.map((payload: any) => {
+      let plaintext = '[unable to decrypt]';
+      try {
+        plaintext = encryptionService.decryptMessage(payload, session.privateKey);
+      } catch (error) {
+        console.error('Decrypt failed', error);
+      }
+
+      return {
+        id: payload.id,
+        content: plaintext,
+        isOutgoing: payload.senderId === currentUserId,
+        createdAt: payload.createdAt,
+        status: payload.senderId === currentUserId ? 'sent' : undefined
+      } as ThreadMessage;
+    });
+
+    setMessages(decrypted);
+  }, [messagesData, session?.privateKey, currentUserId]);
+
+  useEffect(() => {
+    if (!conversationData?.conversationById) {
+      return;
+    }
+    const partner = conversationData.conversationById.participants.find(
+      (participant: any) => participant.userId !== currentUserId
+    );
+    const title = partner ? partner.username ?? formatSession(partner.sessionId) : 'Conversation';
+    navigation.setOptions({ title });
+  }, [conversationData, currentUserId, navigation]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [messages.length]);
+
+  const loadPartnerName = useMemo(() => {
+    const partner = conversationData?.conversationById?.participants.find(
+      (participant: any) => participant.userId !== currentUserId
+    );
+    return partner ? partner.username ?? formatSession(partner.sessionId) : 'Conversation';
+  }, [conversationData, currentUserId]);
 
   const handleSend = async () => {
     if (!input.trim()) {
@@ -115,103 +217,95 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
       return;
     }
 
-    if (!current.jwtToken) {
-      console.error('Missing jwtToken; cannot determine recipient participant.');
+    const recipient = conversationData?.conversationById?.participants.find(
+      (p: any) => p.userId !== currentUserId
+    );
+
+    if (!recipient?.publicKey) {
+      console.error('Missing recipient public key for conversation.');
       return;
     }
 
-    // Ensure we have the participant key material before encrypting.
-    let currentConversation = conversationData?.conversationById;
-    if (!currentConversation && refetchConversation) {
-      try {
-        const res = await refetchConversation();
-        currentConversation = res.data?.conversationById;
-      } catch (e) {
-        console.error('Failed to refetch conversationById before send', e);
-      }
-    }
-
-    const currentUserId = current.userId ?? decodeJwtSub(current.jwtToken);
-    const conversation = currentConversation;
-
-    let recipientPublicKey: string | null = null;
-    if (conversation) {
-      if (currentUserId) {
-        recipientPublicKey = conversation.participants.find((p: any) => p.userId !== currentUserId)?.publicKey ?? null;
-      }
-      if (!recipientPublicKey && current.sessionId) {
-        // Fallback: some dev flows can cause sessionId drift; this only applies if we couldn't parse JWT.
-        recipientPublicKey =
-          conversation.participants.find((p: any) => p.sessionId !== current.sessionId)?.publicKey ?? null;
-      }
-    }
-    if (!recipientPublicKey) {
-      console.error('Missing recipient public key for conversation.', {
-        conversationLoaded: !!conversation,
-        conversationLoading,
-        conversationError,
-        currentUserId,
-        currentSessionId: current.sessionId
-      });
-      return;
-    }
-
-    // Encrypt to the *other* participant so they can decrypt with their private key.
-    const encrypted = encryptionService.encryptMessage(input.trim(), recipientPublicKey, current.privateKey);
-    if (!encrypted.ciphertext) {
-      throw new Error('Encryption failed: ciphertext is empty.');
-    }
-    console.log('ENCRYPTED:', {
-      ciphertext: encrypted.ciphertext,
-      iv: encrypted.nonce,
-      authTag: encrypted.tag
-    });
+    const encrypted = encryptionService.encryptMessage(input.trim(), recipient.publicKey, current.privateKey);
+    const optimisticId = `${Date.now()}-${Math.random()}`;
     setMessages((prev) => [
       ...prev,
       {
-        id: `${Date.now()}-${Math.random()}`,
+        id: optimisticId,
         content: input.trim(),
         isOutgoing: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'sending'
       }
     ]);
-
     setInput('');
 
-    client.mutate({
-      mutation: SEND_MESSAGE,
-      variables: {
-        input: {
-          conversationId,
-          encryptedContent: encrypted.ciphertext,
-          encryptedKey: encrypted.encryptedKey,
-          nonce: encrypted.nonce,
-          tag: encrypted.tag,
-          signature: encrypted.signature,
-          expiryTime: expiry > 0 ? new Date(Date.now() + expiry * 1000).toISOString() : null
+    try {
+      const { data } = await client.mutate({
+        mutation: SEND_MESSAGE,
+        variables: {
+          input: {
+            conversationId,
+            encryptedContent: encrypted.ciphertext,
+            encryptedKey: encrypted.encryptedKey,
+            nonce: encrypted.nonce,
+            tag: encrypted.tag,
+            signature: encrypted.signature,
+            expiryTime: expiry > 0 ? new Date(Date.now() + expiry * 1000).toISOString() : null
+          }
         }
+      });
+
+      const serverMessage = data?.sendMessage;
+      if (serverMessage) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === optimisticId
+              ? { ...msg, id: serverMessage.id ?? msg.id, createdAt: serverMessage.createdAt, status: 'sent' }
+              : msg
+          )
+        );
       }
-    });
+    } catch (error) {
+      console.error('Send message failed', error);
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === optimisticId ? { ...msg, status: 'sent' } : msg))
+      );
+    }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Conversation</Text>
-      {session && <SessionBanner sessionId={session.sessionId} />}
+    <View style={[styles.container, { backgroundColor: palette.background }]}> 
+      {/* <Text style={[styles.header, { color: palette.text }]}>{loadPartnerName}</Text> */}
+      {/* {session && <SessionBanner sessionId={session.sessionId} displayName={localUsername} />} */}
       <FlatList
+        ref={flatListRef}
         data={messages}
         keyExtractor={(msg) => msg.id}
         renderItem={({ item }) => (
-          <ChatBubble key={item.id} text={item.content} isOutgoing={item.isOutgoing} />
+          <ChatBubble
+            text={item.content}
+            isOutgoing={item.isOutgoing}
+            timestamp={new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            status={item.status}
+          />
         )}
         contentContainerStyle={styles.thread}
       />
       <View style={styles.expiryRow}>
-        <Text style={styles.expiryLabel}>Expiry (seconds)</Text>
+        <Text style={[styles.expiryLabel, { color: palette.muted }]}>Expiry (seconds)</Text>
         <View style={styles.expiryButtons}>
           {[0, 30, 60, 300].map((value) => (
-            <Pressable key={value} style={[styles.expiryButton, expiry === value && styles.expiryButtonActive]} onPress={() => setExpiry(value)}>
-              <Text style={styles.expiryButtonText}>{value === 0 ? 'Off' : value}</Text>
+            <Pressable
+              key={value}
+              style={[
+                styles.expiryButton,
+                { borderColor: palette.border },
+                expiry === value && { backgroundColor: palette.action, borderColor: palette.action }
+              ]}
+              onPress={() => setExpiry(value)}
+            >
+              <Text style={[styles.expiryButtonText, { color: palette.text }]}>{value === 0 ? 'Off' : value}</Text>
             </Pressable>
           ))}
         </View>
@@ -219,15 +313,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
       <View style={styles.composeRow}>
         <TextInput
           placeholder="Type a private message"
-          placeholderTextColor="rgba(255,255,255,0.4)"
-          style={styles.input}
+          placeholderTextColor={palette.placeholder}
+          style={[styles.input, { borderColor: palette.border, color: palette.text }]}
           value={input}
           onChangeText={setInput}
         />
         <Pressable
-          style={[styles.sendButton, (conversationLoading || !session || !!conversationError) && { opacity: 0.6 }]}
+          style={[styles.sendButton, { backgroundColor: palette.action }]}
           onPress={handleSend}
-          disabled={conversationLoading || !!conversationError}
         >
           <Text style={styles.sendText}>Send</Text>
         </Pressable>
@@ -239,11 +332,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0b0d',
     padding: 16
   },
   header: {
-    color: '#ffffff',
     fontSize: 18,
     marginBottom: 12
   },
@@ -257,18 +348,16 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
     borderWidth: 1,
     borderRadius: 12,
-    padding: 12,
-    color: '#ffffff'
+    padding: 12
   },
   sendButton: {
     marginLeft: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#1a9cff'
+    alignItems: 'center'
   },
   sendText: {
     color: '#ffffff'
@@ -280,7 +369,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   expiryLabel: {
-    color: '#c0c0c0'
+    fontSize: 14
   },
   expiryButtons: {
     flexDirection: 'row'
@@ -292,10 +381,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
     marginLeft: 6
   },
-  expiryButtonActive: {
-    backgroundColor: '#1a9cff'
-  },
   expiryButtonText: {
-    color: '#ffffff'
+    fontSize: 12
   }
 });

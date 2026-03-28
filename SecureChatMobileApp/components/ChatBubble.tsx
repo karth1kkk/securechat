@@ -1,16 +1,40 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
   text: string;
   isOutgoing?: boolean;
+  timestamp?: string;
+  status?: 'sending' | 'sent';
 }
 
-export const ChatBubble: React.FC<Props> = ({ text, isOutgoing = false }) => (
-  <View style={[styles.container, isOutgoing ? styles.outgoing : styles.incoming]}>
-    <Text style={styles.text}>{text}</Text>
-  </View>
-);
+export const ChatBubble: React.FC<Props> = ({ text, isOutgoing = false, timestamp, status }) => {
+  const { palette } = useTheme();
+  return (
+    <View
+      style={[
+        styles.container,
+        {
+          alignSelf: isOutgoing ? 'flex-end' : 'flex-start',
+          backgroundColor: isOutgoing ? palette.bubbleOutgoing : palette.bubbleIncoming
+        }
+      ]}
+    >
+      <Text style={[styles.text, { color: palette.text }]}>{text}</Text>
+      {(timestamp || (isOutgoing && status)) && (
+        <View style={styles.metaRow}>
+          {timestamp && <Text style={[styles.meta, { color: palette.muted }]}>{timestamp}</Text>}
+          {isOutgoing && status && (
+            <Text style={[styles.meta, { color: palette.muted, marginLeft: 8 }]}>
+              {status === 'sending' ? 'Sending…' : 'Sent'}
+            </Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -19,15 +43,15 @@ const styles = StyleSheet.create({
     marginVertical: 4,
     maxWidth: '80%'
   },
-  incoming: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.08)'
-  },
-  outgoing: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#1a9cff'
-  },
   text: {
-    color: '#f7f7f7'
+    fontSize: 16
+  },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4
+  },
+  meta: {
+    fontSize: 10
   }
 });

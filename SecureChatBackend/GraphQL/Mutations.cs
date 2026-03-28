@@ -36,6 +36,17 @@ public sealed class Mutation
     }
 
     [Authorize]
+    public Task<ConversationDto> CreateConversationWithSessionIdAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        CreateConversationWithSessionIdInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetCurrentUserId(httpContextAccessor);
+        return conversationService.CreateConversationRequestWithSessionIdAsync(userId, input.SessionId, cancellationToken);
+    }
+
+    [Authorize]
     public Task<MessageDto> SendMessageAsync(
         [Service] IMessageService messageService,
         [Service] IHttpContextAccessor httpContextAccessor,
@@ -106,6 +117,30 @@ public sealed class Mutation
     {
         var userId = GetCurrentUserId(httpContextAccessor);
         await conversationService.DeclineConversationRequestAsync(input.ConversationId, userId, cancellationToken);
+        return true;
+    }
+
+    [Authorize]
+    public async Task<bool> DeleteConversationAsync(
+        [Service] IConversationService conversationService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        DeleteConversationInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetCurrentUserId(httpContextAccessor);
+        await conversationService.DeleteConversationAsync(input.ConversationId, userId, cancellationToken);
+        return true;
+    }
+
+    [Authorize]
+    public async Task<bool> UpdateUsernameAsync(
+        [Service] IUserService userService,
+        [Service] IHttpContextAccessor httpContextAccessor,
+        UpdateUsernameInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = GetCurrentUserId(httpContextAccessor);
+        await userService.UpdateUsernameAsync(userId, input.Username, cancellationToken);
         return true;
     }
 

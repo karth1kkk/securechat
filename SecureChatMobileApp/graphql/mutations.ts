@@ -17,9 +17,11 @@ export const CREATE_CONVERSATION = gql`
       id
       isGroup
       createdAt
+      lastMessageAt
       participants {
         userId
-        publicKey
+        sessionId
+        username
       }
     }
   }
@@ -61,5 +63,31 @@ export const SEND_MESSAGE = gql`
       createdAt
       expiryTime
     }
+  }
+`;
+
+export const CREATE_CONVERSATION_WITH_SESSION_ID = gql`
+  mutation CreateConversationWithSessionId($input: CreateConversationWithSessionIdInput!) {
+    createConversationWithSessionId(input: $input) {
+      id
+      participants {
+        userId
+        sessionId
+        username
+      }
+      lastMessageAt
+    }
+  }
+`;
+
+export const DELETE_CONVERSATION = gql`
+  mutation DeleteConversation($input: DeleteConversationInput!) {
+    deleteConversation(input: $input)
+  }
+`;
+
+export const UPDATE_USERNAME = gql`
+  mutation UpdateUsername($input: UpdateUsernameInput!) {
+    updateUsername(input: $input)
   }
 `;

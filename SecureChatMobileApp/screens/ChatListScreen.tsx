@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient, useQuery } from '@apollo/client';
 import { SessionBanner } from '../components/SessionBanner';
@@ -7,19 +7,33 @@ import { sessionService, SessionRecord } from '../services/sessionService';
 import { MY_CONVERSATIONS, MY_CONVERSATION_REQUESTS } from '../graphql/queries';
 import {
   ACCEPT_CONVERSATION_REQUEST,
-  DECLINE_CONVERSATION_REQUEST
+  DECLINE_CONVERSATION_REQUEST,
+  DELETE_CONVERSATION
 } from '../graphql/mutations';
 import { RootStackParamList } from '../navigation/types';
+import { useIsFocused } from '@react-navigation/native';
+import { useTheme } from '../theme/ThemeContext';
+import { preferencesService } from '../services/preferencesService';
+import { Ionicons } from '@expo/vector-icons';
 
 type ChatListScreenProps = NativeStackScreenProps<RootStackParamList, 'ChatList'>;
 
 export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) => {
   const [session, setSession] = useState<SessionRecord | null>(null);
+  const [localUsername, setLocalUsername] = useState<string | null>(null);
   const client = useApolloClient();
+  const { palette } = useTheme();
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     sessionService.ensureSession().then(setSession);
   }, []);
+
+  useEffect(() => {
+    if (isFocused) {
+      preferencesService.getUsername().then(setLocalUsername);
+    }
+  }, [isFocused]);
 
   const {
     data: requestData,
@@ -40,11 +54,23 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
   const requests = useMemo(() => requestData?.myConversationRequestsAsync ?? [], [requestData]);
   const conversations = useMemo(() => conversationsData?.myConversationsAsync ?? [], [conversationsData]);
 
+  const formatSession = (value?: string) => (value ? `${value.slice(0, 6)}…${value.slice(-6)}` : 'Unknown');
+
   const getOtherParticipant = (conversation: any) => {
     if (!session) {
       return conversation?.participants?.[0];
     }
-    return conversation.participants.find((p: any) => p.sessionId !== session.sessionId) ?? conversation.participants[0];
+    return conversation.participants.find((p: any) => p.userId !== session.userId) ?? conversation.participants[0];
+  };
+
+  const getDisplayName = (participant: any) => {
+    if (!participant) {
+      return 'Unknown';
+    }
+    if (participant.userId === session?.userId && localUsername) {
+      return localUsername;
+    }
+    return participant.username ?? formatSession(participant?.sessionId);
   };
 
   const handleAccept = async (conversationId: string) => {
@@ -55,7 +81,6 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
       });
       navigation.navigate('Chat', { conversationId });
     } catch {
-      // Keep UI quiet for now; errors will show in console for debugging.
       console.error('Unable to accept conversation request');
     }
   };
@@ -71,115 +96,207 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
     }
   };
 
+  const handleDelete = async (conversationId: string) => {
+    try {
+      await client.mutate({
+        mutation: DELETE_CONVERSATION,
+        variables: { input: { conversationId } }
+      });
+      refetchConversations();
+    } catch (error) {
+      console.error('Unable to delete conversation', error);
+    }
+  };
+
+  const containerStyles = [styles.container, { backgroundColor: palette.background }];
+  const chatCardStyles = [styles.chatCard, { borderColor: palette.border, backgroundColor: palette.card }];
+  const requestCardStyles = [styles.requestCard, { borderColor: palette.border, backgroundColor: palette.card }];
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>SecureChat</Text>
-      {session && <SessionBanner sessionId={session.sessionId} />}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Requests</Text>
-        {requests.length === 0 ? (
-          <Text style={styles.emptyText}>No pending requests.</Text>
-        ) : (
-          <FlatList
-            data={requests}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => {
-              const other = getOtherParticipant(item);
-              return (
-                <View style={styles.requestCard}>
-                  <Text style={styles.cardTitle}>Chat request</Text>
-                  <Text style={styles.cardMeta}>From: {other?.sessionId ?? 'Unknown'}</Text>
-                  <View style={styles.requestActions}>
-                    <Pressable style={styles.acceptButton} onPress={() => handleAccept(item.id)}>
-                      <Text style={styles.acceptButtonText}>Accept</Text>
-                    </Pressable>
-                    <Pressable style={styles.declineButton} onPress={() => handleDecline(item.id)}>
-                      <Text style={styles.declineButtonText}>Decline</Text>
-                    </Pressable>
+    <View style={containerStyles}>
+      {/* {session && <SessionBanner sessionId={session.sessionId} displayName={localUsername} />} */}
+
+      <View style={styles.content}>
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: palette.text }]}>Requests</Text>
+          {requests.length === 0 ? (
+            <Text style={[styles.emptyText, { color: palette.muted }]}>No pending requests.</Text>
+          ) : (
+            <FlatList
+              data={requests}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                const other = getOtherParticipant(item);
+                return (
+                  <View style={requestCardStyles}>
+                    <Text style={[styles.cardTitle, { color: palette.text }]}>Chat request</Text>
+                    <Text style={[styles.cardMeta, { color: palette.muted }]}>From: {getDisplayName(other)}</Text>
+                    <View style={styles.requestActions}>
+                      <Pressable
+                        style={[styles.acceptButton, { backgroundColor: palette.action }]}
+                        onPress={() => handleAccept(item.id)}
+                      >
+                        <Text style={styles.acceptButtonText}>Accept</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.declineButton, { borderColor: palette.border }]}
+                        onPress={() => handleDecline(item.id)}
+                      >
+                        <Text style={[styles.declineButtonText, { color: palette.text }]}>Decline</Text>
+                      </Pressable>
+                    </View>
                   </View>
-                </View>
-              );
-            }}
-            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          />
-        )}
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+            />
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: palette.text }]}>Chats</Text>
+          {conversations.length === 0 ? (
+            <Text style={[styles.emptyText, { color: palette.muted }]}>No active chats yet.</Text>
+          ) : (
+            <FlatList
+              data={conversations}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                const other = getOtherParticipant(item);
+                const lastActivity = new Date(item.lastMessageAt ?? item.createdAt);
+                const preview = item.lastMessageAt ? 'Encrypted message' : 'Start a new secure chat';
+                return (
+                  <Pressable
+                    style={chatCardStyles}
+                    onPress={() => navigation.navigate('Chat', { conversationId: item.id })}
+                  >
+                    <View>
+                      <Text style={[styles.chatLabel, { color: palette.text }]}>{getDisplayName(other)}</Text>
+                      <Text style={[styles.chatMeta, { color: palette.muted }]}>{preview}</Text>
+                    </View>
+                    <View style={styles.chatFooter}>
+                      <Text style={[styles.chatMeta, { color: palette.muted }]}> 
+                        {lastActivity.toLocaleString(undefined, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </Text>
+                    <Pressable onPress={() => handleDelete(item.id)} accessibilityLabel="Delete conversation">
+                      <Ionicons name="trash-outline" size={18} color={palette.action} />
+                    </Pressable>
+                    </View>
+                  </Pressable>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+            />
+          )}
+        </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Chats</Text>
-        {conversations.length === 0 ? (
-          <Text style={styles.emptyText}>No active chats yet.</Text>
-        ) : (
-          <FlatList
-            data={conversations}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => {
-              const other = getOtherParticipant(item);
-              return (
-                <Pressable style={styles.chatCard} onPress={() => navigation.navigate('Chat', { conversationId: item.id })}>
-                  <Text style={styles.chatLabel}>{other?.sessionId ?? 'Unknown session'}</Text>
-                  <Text style={styles.chatMeta}>Encrypted session ready</Text>
-                </Pressable>
-              );
-            }}
-            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          />
-        )}
-      </View>
-
-      <View style={styles.actions}>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('NewChat')}>
-          <Text style={styles.secondaryText}>+ New Chat</Text>
-        </Pressable>
-        <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate('SecurityCenter')}>
-          <Text style={styles.secondaryText}>Security Center</Text>
-        </Pressable>
-      </View>
+      <Pressable
+        style={[styles.fab, { backgroundColor: palette.action }]}
+        onPress={() => navigation.navigate('NewChat')}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </Pressable>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    backgroundColor: '#0b0b0d',
-    flex: 1
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 20
   },
-  title: {
-    fontSize: 24,
-    color: '#ffffff',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12
+  },
+  headerBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  headerBadgeText: {
+    fontSize: 16,
+    fontWeight: '700'
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700'
+  },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  headerIconText: {
+    fontSize: 18
+  },
+  content: {
+    flex: 1,
+    paddingBottom: 120
+  },
+  section: {
+    marginBottom: 18
+  },
+  sectionTitle: {
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 16
+    marginBottom: 10
+  },
+  emptyText: {
+    fontSize: 14
   },
   chatCard: {
     padding: 16,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)'
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start'
   },
   requestCard: {
     padding: 16,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.03)'
+    borderWidth: 1
   },
   chatLabel: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '500'
   },
   chatMeta: {
-    color: '#9a9a9a',
-    marginTop: 6
+    fontSize: 12,
+    marginTop: 6,
+    flexShrink: 1
+  },
+  chatFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10
+  },
+  deleteText: {
+    fontSize: 12,
+    fontWeight: '600'
   },
   cardTitle: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600'
   },
   cardMeta: {
-    color: '#b0b0b0',
     marginTop: 6
   },
   requestActions: {
@@ -191,7 +308,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginRight: 8,
     borderRadius: 12,
-    backgroundColor: '#1a9cff',
     alignItems: 'center'
   },
   acceptButtonText: {
@@ -202,43 +318,51 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center'
   },
   declineButtonText: {
-    color: '#ffcccb',
     fontWeight: '600'
   },
-  actions: {
+  bottomBar: {
     flexDirection: 'row',
-    marginTop: 20,
-    justifyContent: 'space-between'
-  },
-  secondaryButton: {
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    flex: 1,
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginHorizontal: 4
+    paddingVertical: 16
   },
-  secondaryText: {
-    color: '#ffffff'
+  bottomSpacer: {
+    width: 90
   },
-  section: {
-    marginTop: 14
+  bottomTabText: {
+    fontWeight: '600'
   },
-  sectionTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 10
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    alignSelf: 'center',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6
+      },
+      android: {
+        elevation: 8
+      },
+      web: {
+        boxShadow: '0px 4px 6px rgba(0,0,0,0.3)'
+      }
+    })
   },
-  emptyText: {
-    color: '#9a9a9a',
-    fontSize: 14
+  fabText: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: '700'
   }
 });

@@ -69,6 +69,8 @@ public sealed class MessageService : IMessageService
             ExpiryTime = expiryTime
         };
 
+        conversation.LastMessageAt = message.CreatedAt;
+
         await _messageRepository.AddAsync(message, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

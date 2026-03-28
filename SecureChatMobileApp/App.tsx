@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ApolloProvider } from '@apollo/client';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { apolloClient } from './graphql/client';
@@ -10,32 +10,27 @@ import { ChatScreen } from './screens/ChatScreen';
 import { NewChatScreen } from './screens/NewChatScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SecurityCenterScreen } from './screens/SecurityCenterScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
 import { sessionService, SessionRecord } from './services/sessionService';
 import { pinService } from './services/pinService';
 import { PinLock } from './components/PinLock';
 import { RootStackParamList } from './navigation/types';
 import { REGISTER_ANONYMOUS } from './graphql/mutations';
-import { GRAPHQL_URL } from './config';
 import { ApolloError } from '@apollo/client';
+import { ThemeProvider, useTheme } from './theme/ThemeContext';
+import { preferencesService } from './services/preferencesService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export default function App() {
+const SecureChatApp: React.FC = () => {
   const [sessionReady, setSessionReady] = useState(false);
   const [locked, setLocked] = useState(true);
   const [hasPin, setHasPin] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [localUsername, setLocalUsername] = useState<string | null>(null);
+  const { palette, navigationTheme } = useTheme();
 
   const ensureRemoteRegistration = useCallback(async (session: SessionRecord) => {
-    // Always register on startup.
-    //
-    // Why: the backend commonly runs with an in-memory DB during development, so a backend
-    // restart forgets all users. The client may still have a stored sessionId/jwtToken and
-    // would otherwise skip registration, causing `userBySessionId` lookups to return null.
-    //
-    // This is safe because the backend `registerAnonymous` is idempotent by publicKey
-    // (same publicKey => same user/sessionId).
-
     const { data } = await apolloClient.mutate<
       { registerAnonymous: { userId: string; sessionId: string; publicKey: string; token: string } },
       { input: { publicKey: string; deviceName: string } }
@@ -82,15 +77,18 @@ export default function App() {
         console.error('Apollo networkError', error.networkError);
       }
       console.error('Secure session init failed', error);
-      const baseUrl = GRAPHQL_URL.replace(/\/graphql\/?$/, '');
       const source = error instanceof Error ? error.message : 'Unable to reach the backend.';
-      setSessionError(`${source} Ensure ${baseUrl} is running and tap retry.`);
+      setSessionError(`${source} Ensure the backend is running and tap retry.`);
     }
   }, [ensureRemoteRegistration]);
 
   useEffect(() => {
     initializeSession();
   }, [initializeSession]);
+
+  useEffect(() => {
+    preferencesService.getUsername().then((stored) => setLocalUsername(stored));
+  }, []);
 
   const handleUnlock = async (pin: string) => {
     const verified = await pinService.verifyPin(pin);
@@ -105,20 +103,12 @@ export default function App() {
     setLocked(false);
   };
 
-  const theme = useMemo(
-    () => ({
-      ...DarkTheme,
-      colors: { ...DarkTheme.colors, background: '#0b0b0d' }
-    }),
-    []
-  );
-
   if (sessionError) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>Session unavailable</Text>
-        <Text style={styles.errorMessage}>{sessionError}</Text>
-        <Pressable style={styles.errorButton} onPress={initializeSession}>
+      <View style={[styles.centered, { backgroundColor: palette.background }]}> 
+        <Text style={[styles.errorTitle, { color: palette.text }]}>Session unavailable</Text>
+        <Text style={[styles.errorMessage, { color: palette.text }]}>{sessionError}</Text>
+        <Pressable style={[styles.errorButton, { backgroundColor: palette.action }]} onPress={initializeSession}>
           <Text style={styles.errorButtonText}>Retry</Text>
         </Pressable>
       </View>
@@ -127,67 +117,112 @@ export default function App() {
 
   if (!sessionReady) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1a9cff" />
-        <Text style={styles.loadingText}>Initializing secure session…</Text>
+      <View style={[styles.centered, { backgroundColor: palette.background }]}> 
+        <ActivityIndicator size="large" color={palette.action} />
+        <Text style={[styles.loadingText, { color: palette.text }]}>Initializing secure session…</Text>
       </View>
     );
   }
 
   return (
-    <ApolloProvider client={apolloClient}>
-      <NavigationContainer theme={theme}>
-        <StatusBar style="light" />
-        <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: '#0b0b0d' }, headerTintColor: '#fff' }}>
-          <Stack.Screen name="ChatList" component={ChatListScreen} options={{ title: 'SecureChat' }} />
-          <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat' }} />
+    <>
+      <NavigationContainer theme={navigationTheme}>
+        <StatusBar style={palette.statusBarStyle} />
+        <Stack.Navigator
+          screenOptions={{
+            headerStyle: { backgroundColor: palette.header },
+            headerTintColor: palette.text,
+            headerTitleAlign: 'center'
+          }}
+        >
+          <Stack.Screen
+            name="ChatList"
+            component={ChatListScreen}
+            options={({ navigation }) => {
+              const initial = localUsername?.trim().charAt(0).toUpperCase() ?? 'S';
+              return {
+                title: 'SecureChat',
+                headerTitleAlign: 'center',
+                headerLeft: () => (
+                  <Pressable
+                    style={[styles.headerButton, { borderColor: palette.border }]}
+                    onPress={() => navigation.navigate('Profile')}
+                  >
+                    <Text style={[styles.headerButtonText, { color: palette.text }]}>{initial}</Text>
+                  </Pressable>
+                ),
+                headerRight: () => (
+                  <Pressable
+                    style={[styles.headerButton, { borderColor: palette.border }]}
+                    onPress={() => navigation.navigate('SecurityCenter')}
+                  >
+                    <Text style={[styles.headerButtonText, { color: palette.text }]}>⚙</Text>
+                  </Pressable>
+                )
+              };
+            }}
+          />
+          <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Conversation' }} />
           <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: 'Start Conversation' }} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
         </Stack.Navigator>
       </NavigationContainer>
       <PinLock onUnlock={handleUnlock} onCreate={handleCreate} hasPin={hasPin} visible={locked} />
+    </>
+  );
+};
+
+export default function App() {
+  return (
+    <ApolloProvider client={apolloClient}>
+      <ThemeProvider>
+        <SecureChatApp />
+      </ThemeProvider>
     </ApolloProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  errorContainer: {
+  centered: {
     flex: 1,
-    backgroundColor: '#0b0b0d',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24
+    alignItems: 'center'
   },
   errorTitle: {
-    color: '#ffffff',
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 8
   },
   errorMessage: {
-    color: '#f5f5f5',
-    textAlign: 'center'
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#0b0b0d',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  loadingText: {
-    color: '#ffffff',
-    marginTop: 12
+    textAlign: 'center',
+    marginHorizontal: 24,
+    marginBottom: 16
   },
   errorButton: {
-    marginTop: 24,
     paddingVertical: 12,
     paddingHorizontal: 32,
-    borderRadius: 12,
-    backgroundColor: '#1a9cff'
+    borderRadius: 12
   },
   errorButtonText: {
     color: '#ffffff',
     fontWeight: '600'
+  },
+  loadingText: {
+    marginTop: 12
+  }
+  ,
+  headerButton: {
+    marginHorizontal: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  headerButtonText: {
+    fontWeight: '700'
   }
 });

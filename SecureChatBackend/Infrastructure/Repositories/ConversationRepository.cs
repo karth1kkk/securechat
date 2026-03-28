@@ -38,10 +38,22 @@ public sealed class ConversationRepository : IConversationRepository
             .Include(c => c.Participants)
             .ThenInclude(p => p.User)
             .Where(c => c.Participants.Any(p => p.UserId == userId && p.IsAccepted == isAccepted))
-            .OrderByDescending(c => c.CreatedAt)
+            .OrderByDescending(c => c.LastMessageAt ?? c.CreatedAt)
             .ToListAsync(cancellationToken);
 
         return list;
+    }
+
+    public Task<Conversation?> GetBetweenUsersAsync(Guid userId, Guid otherId, bool requireAccepted, CancellationToken cancellationToken = default)
+    {
+        return _context.Conversations
+            .Include(c => c.Participants)
+            .ThenInclude(p => p.User)
+            .Where(c => !c.IsGroup)
+            .Where(c => c.Participants.Any(p => p.UserId == userId))
+            .Where(c => c.Participants.Any(p => p.UserId == otherId))
+            .Where(c => !requireAccepted || c.Participants.All(p => p.IsAccepted))
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task DeleteAsync(Guid conversationId, CancellationToken cancellationToken = default)

@@ -33,7 +33,6 @@ public sealed class ConversationService : IConversationService
         }
 
         var conversation = new Conversation { IsGroup = isGroup };
-        var participantDtos = new List<ParticipantDto>();
 
         foreach (var participantId in uniqueParticipantIds)
         {
@@ -49,14 +48,13 @@ public sealed class ConversationService : IConversationService
                 Conversation = conversation,
                 IsAccepted = true
             });
-
-            participantDtos.Add(new ParticipantDto(user.Id, user.PublicKey, user.SessionId));
         }
 
         await _conversationRepository.AddAsync(conversation, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new ConversationDto(conversation.Id, conversation.IsGroup, conversation.CreatedAt, participantDtos);
+        var saved = await _conversationRepository.GetByIdAsync(conversation.Id, cancellationToken);
+        return saved is null ? throw new InvalidOperationException("Conversation could not be loaded.") : BuildDto(saved);
     }
 
     public async Task<ConversationDto> CreateConversationRequestAsync(Guid requesterId, Guid targetId, CancellationToken cancellationToken = default)
@@ -89,16 +87,11 @@ public sealed class ConversationService : IConversationService
             IsAccepted = false
         });
 
-        var participantDtos = new List<ParticipantDto>
-        {
-            new ParticipantDto(requester.Id, requester.PublicKey, requester.SessionId),
-            new ParticipantDto(target.Id, target.PublicKey, target.SessionId)
-        };
-
         await _conversationRepository.AddAsync(conversation, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new ConversationDto(conversation.Id, conversation.IsGroup, conversation.CreatedAt, participantDtos);
+        var saved = await _conversationRepository.GetByIdAsync(conversation.Id, cancellationToken);
+        return saved is null ? throw new InvalidOperationException("Conversation could not be loaded.") : BuildDto(saved);
     }
 
     public async Task<bool> IsParticipantAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default)
@@ -117,13 +110,7 @@ public sealed class ConversationService : IConversationService
         var conversations = await _conversationRepository.GetByUserAsync(userId, isAccepted, cancellationToken);
 
         // Map entity -> DTO
-        return conversations.Select(c =>
-            new ConversationDto(
-                c.Id,
-                c.IsGroup,
-                c.CreatedAt,
-                c.Participants.Select(p => new ParticipantDto(p.UserId, p.User.PublicKey, p.User.SessionId)).ToList()
-            )).ToList();
+        return conversations.Select(BuildDto).ToList();
     }
 
     public async Task AcceptConversationRequestAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default)
@@ -162,5 +149,63 @@ public sealed class ConversationService : IConversationService
         // Simplest behavior: declining removes the entire pending conversation request.
         await _conversationRepository.DeleteAsync(conversationId, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<ConversationDto> CreateOrGetDirectConversationAsync(Guid requesterId, string targetSessionId, CancellationToken cancellationToken = default)
+    {
+        var target = await _userRepository.GetBySessionIdAsync(targetSessionId, cancellationToken);
+        if (target == null)
+        {
+            throw new InvalidOperationException("Target user not found.");
+        }
+
+        if (target.Id == requesterId)
+        {
+            throw new InvalidOperationException("Cannot start a chat with yourself.");
+        }
+
+        var existing = await _conversationRepository.GetBetweenUsersAsync(requesterId, target.Id, requireAccepted: true, cancellationToken);
+        if (existing != null)
+        {
+            return BuildDto(existing);
+        }
+
+        return await CreateConversationAsync(new[] { target.Id, requesterId }, false, cancellationToken);
+    }
+
+    public async Task DeleteConversationAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var conversation = await _conversationRepository.GetByIdAsync(conversationId, cancellationToken);
+        if (conversation == null)
+        {
+            throw new InvalidOperationException("Conversation not found.");
+        }
+
+        if (!conversation.Participants.Any(p => p.UserId == userId && p.IsAccepted))
+        {
+            throw new InvalidOperationException("Only participants can delete a conversation.");
+        }
+
+        await _conversationRepository.DeleteAsync(conversationId, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<ConversationDto> CreateConversationRequestWithSessionIdAsync(Guid requesterId, string targetSessionId, CancellationToken cancellationToken = default)
+    {
+        var target = await _userRepository.GetBySessionIdAsync(targetSessionId, cancellationToken);
+        if (target == null)
+        {
+            throw new InvalidOperationException("Target user not found.");
+        }
+
+        return await CreateConversationRequestAsync(requesterId, target.Id, cancellationToken);
+    }
+
+    private static ConversationDto BuildDto(Conversation conversation)
+    {
+        var participantDtos = conversation.Participants
+            .Select(p => new ParticipantDto(p.UserId, p.User.PublicKey, p.User.SessionId, p.User.Username))
+            .ToList();
+        return new ConversationDto(conversation.Id, conversation.IsGroup, conversation.CreatedAt, conversation.LastMessageAt, participantDtos);
     }
 }

@@ -4,4 +4,5 @@ export type RootStackParamList = {
   NewChat: undefined;
   Settings: undefined;
   SecurityCenter: undefined;
+  Profile: undefined;
 };

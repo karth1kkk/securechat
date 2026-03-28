@@ -29,6 +29,7 @@ public sealed class SecureChatDbContext : DbContext
             entity.Property(x => x.SessionId).IsRequired().HasMaxLength(66);
             entity.Property(x => x.PublicKey).IsRequired();
             entity.Property(x => x.CreatedAt).IsRequired();
+            entity.Property(x => x.Username).HasMaxLength(64);
         });
 
         modelBuilder.Entity<Device>(entity =>
@@ -44,6 +45,7 @@ public sealed class SecureChatDbContext : DbContext
             entity.HasKey(x => x.Id);
             entity.Property(x => x.CreatedAt).IsRequired();
             entity.Property(x => x.IsGroup).IsRequired();
+            entity.Property(x => x.LastMessageAt);
         });
 
         modelBuilder.Entity<ConversationParticipant>(entity =>

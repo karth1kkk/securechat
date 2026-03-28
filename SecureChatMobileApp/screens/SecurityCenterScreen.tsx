@@ -4,13 +4,19 @@ import { sessionService, SessionRecord } from '../services/sessionService';
 import { encryptionService } from '../services/encryptionService';
 import { apolloClient } from '../graphql/client';
 import { REGISTER_ANONYMOUS } from '../graphql/mutations';
+import { useTheme } from '../theme/ThemeContext';
+import { preferencesService } from '../services/preferencesService';
+import { SessionBanner } from '../components/SessionBanner';
 
 export const SecurityCenterScreen: React.FC = () => {
   const [session, setSession] = useState<SessionRecord | null>(null);
   const [feedback, setFeedback] = useState('');
+  const [localUsername, setLocalUsername] = useState<string | null>(null);
+  const { palette } = useTheme();
 
   useEffect(() => {
     sessionService.getSession().then(setSession);
+    preferencesService.getUsername().then(setLocalUsername);
   }, []);
 
   const rotateKeys = async () => {
@@ -62,27 +68,28 @@ export const SecurityCenterScreen: React.FC = () => {
 
   if (!session) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.text}>Loading security details…</Text>
+      <View style={[styles.container, { backgroundColor: palette.background }]}>
+        <Text style={[styles.text, { color: palette.text }]}>Loading security details…</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Security Center</Text>
-      <Text style={styles.label}>Session ID</Text>
-      <Text style={styles.value}>{session.sessionId}</Text>
-      <Text style={styles.label}>Public Key</Text>
-      <Text style={styles.value}>{session.publicKey.slice(0, 40)}…</Text>
-      <Text style={styles.label}>Device</Text>
-      <Text style={styles.value}>{session.deviceName}</Text>
-      <Text style={styles.label}>Created At</Text>
-      <Text style={styles.value}>{new Date(session.createdAt).toLocaleString()}</Text>
-      <Pressable style={styles.button} onPress={rotateKeys}>
-        <Text style={styles.buttonText}>Rotate Keys</Text>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.background }]}>
+      {/* <Text style={[styles.title, { color: palette.text }]}>Security Center</Text> */}
+      <SessionBanner sessionId={session.sessionId} displayName={localUsername} />
+      <Text style={[styles.label, { color: palette.muted }]}>Session ID</Text>
+      <Text style={[styles.value, { color: palette.text }]}>{session.sessionId}</Text>
+      <Text style={[styles.label, { color: palette.muted }]}>Public Key</Text>
+      <Text style={[styles.value, { color: palette.text }]}>{session.publicKey.slice(0, 40)}…</Text>
+      <Text style={[styles.label, { color: palette.muted }]}>Device</Text>
+      <Text style={[styles.value, { color: palette.text }]}>{session.deviceName}</Text>
+      <Text style={[styles.label, { color: palette.muted }]}>Created At</Text>
+      <Text style={[styles.value, { color: palette.text }]}>{new Date(session.createdAt).toLocaleString()}</Text>
+      <Pressable style={[styles.button, { backgroundColor: palette.action }]} onPress={rotateKeys}>
+        <Text style={[styles.buttonText, { color: '#ffffff' }]}>Rotate Keys</Text>
       </Pressable>
-      {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
+      {feedback ? <Text style={[styles.feedback, { color: palette.action }]}>{feedback}</Text> : null}
     </ScrollView>
   );
 };
@@ -90,38 +97,32 @@ export const SecurityCenterScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    backgroundColor: '#0b0b0d',
     flexGrow: 1
   },
   title: {
-    color: '#ffffff',
     fontSize: 24,
     marginBottom: 16
   },
   label: {
-    color: '#a0a0a0',
     marginTop: 16
   },
   value: {
-    color: '#ffffff',
     marginTop: 4
   },
   button: {
     marginTop: 24,
-    backgroundColor: '#1a9cff',
     borderRadius: 12,
     padding: 14,
     alignItems: 'center'
   },
   buttonText: {
-    color: '#ffffff',
     fontWeight: '600'
   },
   feedback: {
-    color: '#8efc8d',
-    marginTop: 12
+    marginTop: 12,
+    fontSize: 14
   },
   text: {
-    color: '#ffffff'
+    fontSize: 16
   }
 });

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Threading;
@@ -26,7 +27,7 @@ public sealed class Query
             return null;
         }
 
-        return new UserDto(user.Id, user.SessionId, user.PublicKey, user.CreatedAt);
+        return new UserDto(user.Id, user.SessionId, user.PublicKey, user.CreatedAt, user.Username);
     }
 
     [Authorize]
@@ -114,8 +115,8 @@ public sealed class Query
         }
 
         var participants = conversation.Participants
-            .Select(p => new ParticipantDto(p.UserId, p.User.PublicKey, p.User.SessionId))
+            .Select(p => new ParticipantDto(p.UserId, p.User.PublicKey, p.User.SessionId, p.User.Username))
             .ToList();
-        return new ConversationDto(conversation.Id, conversation.IsGroup, conversation.CreatedAt, participants);
+        return new ConversationDto(conversation.Id, conversation.IsGroup, conversation.CreatedAt, conversation.LastMessageAt, participants);
     }
 }

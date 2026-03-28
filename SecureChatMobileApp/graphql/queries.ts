@@ -7,6 +7,7 @@ export const GET_USER_BY_SESSION_ID = gql`
       sessionId
       publicKey
       createdAt
+      username
     }
   }
 `;
@@ -34,10 +35,12 @@ export const MY_CONVERSATIONS = gql`
       id
       isGroup
       createdAt
+      lastMessageAt
       participants {
         userId
         publicKey
         sessionId
+        username
       }
     }
   }
@@ -49,10 +52,12 @@ export const MY_CONVERSATION_REQUESTS = gql`
       id
       isGroup
       createdAt
+      lastMessageAt
       participants {
         userId
         publicKey
         sessionId
+        username
       }
     }
   }
@@ -62,10 +67,12 @@ export const CONVERSATION_BY_ID = gql`
   query ConversationById($conversationId: UUID!) {
     conversationById(conversationId: $conversationId) {
       id
+      lastMessageAt
       participants {
         userId
         publicKey
         sessionId
+        username
       }
     }
   }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
   onUnlock: (pin: string) => void;
@@ -11,6 +12,7 @@ interface Props {
 export const PinLock: React.FC<Props> = ({ onUnlock, onCreate, hasPin, visible }) => {
   const [value, setValue] = useState('');
   const [message, setMessage] = useState('');
+  const { palette } = useTheme();
 
   useEffect(() => {
     setValue('');
@@ -36,10 +38,10 @@ export const PinLock: React.FC<Props> = ({ onUnlock, onCreate, hasPin, visible }
 
   return (
     <View style={styles.overlay}>
-      <View style={styles.card}>
-        <Text style={styles.title}>{hasPin ? 'Unlock SecureChat' : 'Create a PIN'}</Text>
+      <View style={[styles.card, { backgroundColor: palette.card, borderColor: palette.border }]}>
+        <Text style={[styles.title, { color: palette.text }]}>{hasPin ? 'Unlock SecureChat' : 'Create a PIN'}</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { borderColor: palette.border, color: palette.text }]}
           keyboardType="number-pad"
           secureTextEntry
           placeholder="••••"
@@ -49,8 +51,8 @@ export const PinLock: React.FC<Props> = ({ onUnlock, onCreate, hasPin, visible }
             setValue(sanitized);
           }}
         />
-        {!!message && <Text style={styles.message}>{message}</Text>}
-        <TouchableOpacity style={styles.button} onPress={handlePress}>
+        {!!message && <Text style={[styles.message, { color: palette.action }]}>{message}</Text>}
+        <TouchableOpacity style={[styles.button, { backgroundColor: palette.action }]} onPress={handlePress}>
           <Text style={styles.buttonText}>{hasPin ? 'Unlock' : 'Save PIN'}</Text>
         </TouchableOpacity>
       </View>
@@ -73,7 +75,6 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    backgroundColor: '#121212',
     borderRadius: 16,
     padding: 24,
     borderWidth: 1,
@@ -95,7 +96,6 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 12,
-    backgroundColor: '#1a9cff',
     borderRadius: 12,
     padding: 12,
     alignItems: 'center'
