@@ -78,5 +78,9 @@ export const sessionService = {
     const session = (await this.getSession()) ?? (await this.ensureSession());
     session.jwtToken = token;
     await this.updateSession(session);
+  },
+
+  async clearSession() {
+    await secureStore.deleteItem(SESSION_KEY);
   }
 };

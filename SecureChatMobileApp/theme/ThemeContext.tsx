@@ -4,6 +4,7 @@ import { preferencesService, ThemePreference, DEFAULT_THEME } from '../services/
 
 export interface ThemePalette {
   background: string;
+  surface: string;
   card: string;
   text: string;
   muted: string;
@@ -14,6 +15,8 @@ export interface ThemePalette {
   header: string;
   statusBarStyle: 'light' | 'dark';
   action: string;
+  glow: string;
+  shadow: string;
 }
 
 export interface ThemeContextValue {
@@ -28,18 +31,22 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const buildPalette = (preference: ThemePreference): ThemePalette => {
   const isDark = preference.mode === 'dark';
+  const accentGlow = `${preference.accentColor}33`;
   return {
-    background: isDark ? '#050507' : '#f5f5f7',
-    card: isDark ? '#0f0f14' : '#ffffff',
-    text: isDark ? '#f5f5f5' : '#111111',
-    muted: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(17,17,17,0.6)',
-    border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-    bubbleIncoming: isDark ? 'rgba(255,255,255,0.08)' : '#f1f1f1',
+    background: isDark ? '#0f172a' : '#f8fafc',
+    surface: isDark ? '#111827' : '#ffffff',
+    card: isDark ? '#1e293b' : '#fdfdfd',
+    text: isDark ? '#f8fafc' : '#0f172a',
+    muted: isDark ? 'rgba(248,250,252,0.65)' : 'rgba(15,23,42,0.55)',
+    border: isDark ? 'rgba(248,250,252,0.08)' : 'rgba(15,23,42,0.08)',
+    bubbleIncoming: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9',
     bubbleOutgoing: preference.accentColor,
-    placeholder: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
-    header: isDark ? '#0b0b0d' : '#f0f0f4',
+    placeholder: isDark ? 'rgba(248,250,252,0.4)' : 'rgba(15,23,42,0.4)',
+    header: isDark ? '#0b1220' : '#f8fafc',
     statusBarStyle: isDark ? 'light' : 'dark',
-    action: preference.accentColor
+    action: preference.accentColor,
+    glow: accentGlow,
+    shadow: isDark ? 'rgba(15,23,42,0.65)' : 'rgba(15,23,42,0.12)'
   };
 };
 

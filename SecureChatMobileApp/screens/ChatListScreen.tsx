@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { FlatList, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient, useQuery } from '@apollo/client';
 import { SessionBanner } from '../components/SessionBanner';
@@ -18,7 +18,24 @@ import { Ionicons } from '@expo/vector-icons';
 
 type ChatListScreenProps = NativeStackScreenProps<RootStackParamList, 'ChatList'>;
 
+type ConversationParticipant = {
+  userId: string;
+  publicKey?: string | null;
+  sessionId?: string | null;
+  username?: string | null;
+};
+
+type ConversationRecord = {
+  id: string;
+  isGroup?: boolean;
+  createdAt: string;
+  lastMessageAt?: string | null;
+  participants: ConversationParticipant[];
+};
+
 export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) => {
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [session, setSession] = useState<SessionRecord | null>(null);
   const [localUsername, setLocalUsername] = useState<string | null>(null);
   const client = useApolloClient();
@@ -38,7 +55,7 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
   const {
     data: requestData,
     refetch: refetchRequests
-  } = useQuery(MY_CONVERSATION_REQUESTS, {
+  } = useQuery<{ myConversationRequestsAsync: ConversationRecord[] }>(MY_CONVERSATION_REQUESTS, {
     pollInterval: 10000,
     fetchPolicy: 'network-only'
   });
@@ -46,24 +63,22 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
   const {
     data: conversationsData,
     refetch: refetchConversations
-  } = useQuery(MY_CONVERSATIONS, {
+  } = useQuery<{ myConversationsAsync: ConversationRecord[] }>(MY_CONVERSATIONS, {
     pollInterval: 10000,
     fetchPolicy: 'network-only'
   });
 
-  const requests = useMemo(() => requestData?.myConversationRequestsAsync ?? [], [requestData]);
-  const conversations = useMemo(() => conversationsData?.myConversationsAsync ?? [], [conversationsData]);
+  const formatSession = (value?: string | null) =>
+    value ? `${value.slice(0, 6)}…${value.slice(-6)}` : 'Unknown';
 
-  const formatSession = (value?: string) => (value ? `${value.slice(0, 6)}…${value.slice(-6)}` : 'Unknown');
-
-  const getOtherParticipant = (conversation: any) => {
+  const getOtherParticipant = (conversation: ConversationRecord) => {
     if (!session) {
-      return conversation?.participants?.[0];
+      return conversation.participants[0];
     }
-    return conversation.participants.find((p: any) => p.userId !== session.userId) ?? conversation.participants[0];
+    return conversation.participants.find((p) => p.userId !== session.userId) ?? conversation.participants[0];
   };
 
-  const getDisplayName = (participant: any) => {
+  const getDisplayName = (participant?: ConversationParticipant | null) => {
     if (!participant) {
       return 'Unknown';
     }
@@ -72,6 +87,21 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
     }
     return participant.username ?? formatSession(participant?.sessionId);
   };
+
+  const requests = useMemo<ConversationRecord[]>(() => requestData?.myConversationRequestsAsync ?? [], [requestData]);
+  const conversations = useMemo<ConversationRecord[]>(() => conversationsData?.myConversationsAsync ?? [], [conversationsData]);
+  const filteredConversations = useMemo<ConversationRecord[]>(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) {
+      return conversations;
+    }
+    return conversations.filter((item) => {
+      const other = getOtherParticipant(item);
+      const displayName = getDisplayName(other);
+      const target = `${displayName ?? ''} ${item.id ?? ''}`.toLowerCase();
+      return target.includes(normalized);
+    });
+  }, [conversations, searchQuery, session, localUsername]);
 
   const handleAccept = async (conversationId: string) => {
     try {
@@ -112,17 +142,62 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
   const chatCardStyles = [styles.chatCard, { borderColor: palette.border, backgroundColor: palette.card }];
   const requestCardStyles = [styles.requestCard, { borderColor: palette.border, backgroundColor: palette.card }];
 
+  useLayoutEffect(() => {
+    const toggleSearch = () => {
+      setSearchActive((current) => {
+        if (current) {
+          setSearchQuery('');
+        }
+        return !current;
+      });
+    };
+
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable style={[styles.headerIcon, { borderColor: palette.border }]} onPress={toggleSearch}>
+          <Ionicons name={searchActive ? 'close' : 'search'} size={18} color={palette.text} />
+        </Pressable>
+      )
+    });
+  }, [navigation, palette.border, palette.text, searchActive]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setSearchActive(false);
+      setSearchQuery('');
+    }
+  }, [isFocused]);
+
   return (
     <View style={containerStyles}>
       {/* {session && <SessionBanner sessionId={session.sessionId} displayName={localUsername} />} */}
 
       <View style={styles.content}>
+        {searchActive && (
+          <View style={[styles.searchBar, { borderColor: palette.border, backgroundColor: palette.card }]}>
+            <Ionicons name="search" size={18} color={palette.muted} />
+            <TextInput
+              style={[styles.searchInput, { color: palette.text }]}
+              placeholder="Search conversations"
+              placeholderTextColor={palette.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              autoFocus
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={18} color={palette.action} />
+              </Pressable>
+            ) : null}
+          </View>
+        )}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: palette.text }]}>Requests</Text>
           {requests.length === 0 ? (
             <Text style={[styles.emptyText, { color: palette.muted }]}>No pending requests.</Text>
           ) : (
-            <FlatList
+            <FlatList<ConversationRecord>
               data={requests}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
@@ -158,8 +233,8 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
           {conversations.length === 0 ? (
             <Text style={[styles.emptyText, { color: palette.muted }]}>No active chats yet.</Text>
           ) : (
-            <FlatList
-              data={conversations}
+            <FlatList<ConversationRecord>
+              data={filteredConversations}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
                 const other = getOtherParticipant(item);
@@ -183,9 +258,9 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
                           day: 'numeric'
                         })}
                       </Text>
-                    <Pressable onPress={() => handleDelete(item.id)} accessibilityLabel="Delete conversation">
-                      <Ionicons name="trash-outline" size={18} color={palette.action} />
-                    </Pressable>
+                      <Pressable onPress={() => handleDelete(item.id)} accessibilityLabel="Delete conversation">
+                        <Ionicons name="trash-outline" size={18} color={palette.action} />
+                      </Pressable>
                     </View>
                   </Pressable>
                 );
@@ -241,6 +316,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  searchBar: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 16
   },
   headerIconText: {
     fontSize: 18

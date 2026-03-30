@@ -11,6 +11,10 @@ import { NewChatScreen } from './screens/NewChatScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SecurityCenterScreen } from './screens/SecurityCenterScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { PathScreen } from './screens/PathScreen';
+import { AppearanceScreen } from './screens/AppearanceScreen';
+import { ProfileEditModal } from './screens/ProfileEditModal';
+import { ConversationsSettingsScreen } from './screens/ConversationsSettingsScreen';
 import { sessionService, SessionRecord } from './services/sessionService';
 import { pinService } from './services/pinService';
 import { PinLock } from './components/PinLock';
@@ -146,19 +150,11 @@ const SecureChatApp: React.FC = () => {
                 headerLeft: () => (
                   <Pressable
                     style={[styles.headerButton, { borderColor: palette.border }]}
-                    onPress={() => navigation.navigate('Profile')}
+                    onPress={() => navigation.navigate('Settings')}
                   >
                     <Text style={[styles.headerButtonText, { color: palette.text }]}>{initial}</Text>
                   </Pressable>
                 ),
-                headerRight: () => (
-                  <Pressable
-                    style={[styles.headerButton, { borderColor: palette.border }]}
-                    onPress={() => navigation.navigate('SecurityCenter')}
-                  >
-                    <Text style={[styles.headerButtonText, { color: palette.text }]}>⚙</Text>
-                  </Pressable>
-                )
               };
             }}
           />
@@ -166,7 +162,21 @@ const SecureChatApp: React.FC = () => {
           <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: 'Start Conversation' }} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
+          <Stack.Screen name="Path" component={PathScreen} options={{ title: 'Path' }} />
+          <Stack.Screen name="Appearance" component={AppearanceScreen} options={{ title: 'Appearance' }} />
+          <Stack.Screen
+            name="ConversationsSettings"
+            component={ConversationsSettingsScreen}
+            options={{ title: 'Conversations' }}
+          />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
+          <Stack.Group screenOptions={{ presentation: 'modal' }}>
+            <Stack.Screen
+              name="ProfileEditModal"
+              component={ProfileEditModal}
+              options={{ title: 'Edit Profile' }}
+            />
+          </Stack.Group>
         </Stack.Navigator>
       </NavigationContainer>
       <PinLock onUnlock={handleUnlock} onCreate={handleCreate} hasPin={hasPin} visible={locked} />
