@@ -6,7 +6,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  StyleSheet,
   Text,
   TextInput,
   View
@@ -14,11 +13,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { preferencesService } from '../services/preferencesService';
 import { useTheme } from '../theme/ThemeContext';
-
 type Props = {
   visible: boolean;
   onClose: () => void;
-  /** Called after a successful save so the parent can refresh display name. */
   onSaved?: () => void;
 };
 
@@ -53,31 +50,34 @@ export function ProfileEditSheet({ visible, onClose, onSaved }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView
-        style={styles.keyboardRoot}
+        className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.root}>
+        <View className="flex-1 justify-end">
           <Pressable
-            style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
+            className="absolute inset-0 bg-black/45"
             onPress={onClose}
             accessibilityLabel="Dismiss edit profile"
             accessibilityRole="button"
           />
           <View
-            style={[
-              styles.sheet,
-              {
-                backgroundColor: palette.surface,
-                borderTopColor: palette.border,
-                paddingBottom: Math.max(insets.bottom, 16)
-              }
-            ]}
+            className="max-h-[88%] rounded-t-[20px] border-t px-5 pt-2"
+            style={{
+              backgroundColor: palette.surface,
+              borderTopColor: palette.border,
+              paddingBottom: Math.max(insets.bottom, 16)
+            }}
           >
-            <View style={[styles.handle, { backgroundColor: palette.border }]} />
-            <Text style={[styles.title, { color: palette.text }]}>Edit profile</Text>
-            <Text style={[styles.label, { color: palette.muted }]}>Profile name</Text>
+            <View className="mb-4 h-1 w-10 self-center rounded-sm" style={{ backgroundColor: palette.border }} />
+            <Text className="mb-[18px] text-center text-lg font-bold" style={{ color: palette.text }}>
+              Edit profile
+            </Text>
+            <Text className="mb-2 text-sm font-semibold" style={{ color: palette.muted }}>
+              Profile name
+            </Text>
             <TextInput
-              style={[styles.input, { borderColor: palette.border, color: palette.text }]}
+              className="rounded-[14px] border p-3.5 text-base"
+              style={{ borderColor: palette.border, color: palette.text }}
               placeholder="Enter display name"
               placeholderTextColor={palette.placeholder}
               value={username}
@@ -86,27 +86,31 @@ export function ProfileEditSheet({ visible, onClose, onSaved }: Props) {
               autoCorrect
               autoCapitalize="words"
             />
-            <Text style={[styles.helper, { color: palette.muted }]}>Keep it simple and unique.</Text>
-            <View style={styles.actions}>
+            <Text className="mt-2 text-xs" style={{ color: palette.muted }}>
+              Keep it simple and unique.
+            </Text>
+            <View className="mt-5 flex-row gap-2.5">
               <Pressable
-                style={({ pressed }) => [
-                  styles.actionButton,
-                  {
-                    borderColor: palette.border,
-                    backgroundColor: pressed ? palette.background : 'transparent'
-                  }
-                ]}
+                className="flex-1 items-center rounded-[14px] border py-3.5"
+                style={({ pressed }) => ({
+                  borderColor: palette.border,
+                  backgroundColor: pressed ? palette.background : 'transparent',
+                  opacity: saving ? 0.6 : 1
+                })}
                 onPress={onClose}
                 disabled={saving}
               >
-                <Text style={[styles.actionText, { color: palette.text }]}>Cancel</Text>
+                <Text className="text-base font-semibold" style={{ color: palette.text }}>
+                  Cancel
+                </Text>
               </Pressable>
               <Pressable
-                style={[styles.actionButton, styles.primaryButton, { backgroundColor: palette.action }]}
+                className="flex-1 items-center rounded-[14px] py-3.5"
+                style={{ backgroundColor: palette.action }}
                 onPress={() => void handleSave()}
                 disabled={saving}
               >
-                <Text style={[styles.actionText, { color: '#fff' }]}>{saving ? 'Saving…' : 'Save'}</Text>
+                <Text className="text-base font-semibold text-white">{saving ? 'Saving…' : 'Save'}</Text>
               </Pressable>
             </View>
           </View>
@@ -115,71 +119,3 @@ export function ProfileEditSheet({ visible, onClose, onSaved }: Props) {
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  keyboardRoot: {
-    flex: 1
-  },
-  root: {
-    flex: 1,
-    justifyContent: 'flex-end'
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject
-  },
-  sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    maxHeight: '88%'
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: 16
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 18
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 16
-  },
-  helper: {
-    marginTop: 8,
-    fontSize: 12
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 22
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingVertical: 14,
-    alignItems: 'center'
-  },
-  primaryButton: {
-    borderWidth: 0
-  },
-  actionText: {
-    fontWeight: '600',
-    fontSize: 16
-  }
-});

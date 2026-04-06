@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient, useQuery } from '@apollo/client';
 import { useIsFocused } from '@react-navigation/native';
@@ -275,9 +275,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.background }]}> 
-      {/* <Text style={[styles.header, { color: palette.text }]}>{loadPartnerName}</Text> */}
-      {/* {session && <SessionBanner sessionId={session.sessionId} displayName={localUsername} />} */}
+    <View className="flex-1 p-4" style={{ backgroundColor: palette.background }}>
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -290,98 +288,47 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
             status={item.status}
           />
         )}
-        contentContainerStyle={styles.thread}
+        contentContainerStyle={{ paddingBottom: 16 }}
       />
-      <View style={styles.expiryRow}>
-        <Text style={[styles.expiryLabel, { color: palette.muted }]}>Expiry (seconds)</Text>
-        <View style={styles.expiryButtons}>
+      <View className="mt-3 flex-row items-center justify-between">
+        <Text className="text-sm" style={{ color: palette.muted }}>
+          Expiry (seconds)
+        </Text>
+        <View className="flex-row">
           {[0, 30, 60, 300].map((value) => (
             <Pressable
               key={value}
+              className="ml-1.5 rounded-lg border p-1.5"
               style={[
-                styles.expiryButton,
                 { borderColor: palette.border },
                 expiry === value && { backgroundColor: palette.action, borderColor: palette.action }
               ]}
               onPress={() => setExpiry(value)}
             >
-              <Text style={[styles.expiryButtonText, { color: palette.text }]}>{value === 0 ? 'Off' : value}</Text>
+              <Text className="text-xs" style={{ color: palette.text }}>
+                {value === 0 ? 'Off' : value}
+              </Text>
             </Pressable>
           ))}
         </View>
       </View>
-      <View style={styles.composeRow}>
+      <View className="mt-3 flex-row items-center">
         <TextInput
           placeholder="Type a private message"
           placeholderTextColor={palette.placeholder}
-          style={[styles.input, { borderColor: palette.border, color: palette.text }]}
+          className="flex-1 rounded-xl border p-3"
+          style={{ borderColor: palette.border, color: palette.text }}
           value={input}
           onChangeText={setInput}
         />
         <Pressable
-          style={[styles.sendButton, { backgroundColor: palette.action }]}
+          className="ml-2 items-center rounded-xl px-4 py-3"
+          style={{ backgroundColor: palette.action }}
           onPress={handleSend}
         >
-          <Text style={styles.sendText}>Send</Text>
+          <Text className="font-semibold text-white">Send</Text>
         </Pressable>
       </View>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16
-  },
-  header: {
-    fontSize: 18,
-    marginBottom: 12
-  },
-  thread: {
-    paddingBottom: 16
-  },
-  composeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12
-  },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12
-  },
-  sendButton: {
-    marginLeft: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center'
-  },
-  sendText: {
-    color: '#ffffff'
-  },
-  expiryRow: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  expiryLabel: {
-    fontSize: 14
-  },
-  expiryButtons: {
-    flexDirection: 'row'
-  },
-  expiryButton: {
-    padding: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    marginLeft: 6
-  },
-  expiryButtonText: {
-    fontSize: 12
-  }
-});

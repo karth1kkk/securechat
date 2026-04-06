@@ -1,8 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { FlatList, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient, useQuery } from '@apollo/client';
-import { SessionBanner } from '../components/SessionBanner';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { MY_CONVERSATIONS, MY_CONVERSATION_REQUESTS } from '../graphql/queries';
 import {
@@ -52,10 +51,7 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
     }
   }, [isFocused]);
 
-  const {
-    data: requestData,
-    refetch: refetchRequests
-  } = useQuery<{ myConversationRequestsAsync: ConversationRecord[] }>(MY_CONVERSATION_REQUESTS, {
+  const { data: requestData } = useQuery<{ myConversationRequestsAsync: ConversationRecord[] }>(MY_CONVERSATION_REQUESTS, {
     pollInterval: 10000,
     fetchPolicy: 'network-only'
   });
@@ -138,10 +134,6 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
     }
   };
 
-  const containerStyles = [styles.container, { backgroundColor: palette.background }];
-  const chatCardStyles = [styles.chatCard, { borderColor: palette.border, backgroundColor: palette.card }];
-  const requestCardStyles = [styles.requestCard, { borderColor: palette.border, backgroundColor: palette.card }];
-
   useLayoutEffect(() => {
     const toggleSearch = () => {
       setSearchActive((current) => {
@@ -154,7 +146,11 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
 
     navigation.setOptions({
       headerRight: () => (
-        <Pressable style={[styles.headerIcon, { borderColor: palette.border }]} onPress={toggleSearch}>
+        <Pressable
+          className="mr-2.5 h-10 w-10 items-center justify-center rounded-full border"
+          style={{ borderColor: palette.border }}
+          onPress={toggleSearch}
+        >
           <Ionicons name={searchActive ? 'close' : 'search'} size={18} color={palette.text} />
         </Pressable>
       )
@@ -168,16 +164,25 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
     }
   }, [isFocused]);
 
-  return (
-    <View style={containerStyles}>
-      {/* {session && <SessionBanner sessionId={session.sessionId} displayName={localUsername} />} */}
+  const fabShadow =
+    Platform.OS === 'ios'
+      ? { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6 }
+      : Platform.OS === 'android'
+        ? { elevation: 8 }
+        : { boxShadow: '0px 4px 6px rgba(0,0,0,0.3)' };
 
-      <View style={styles.content}>
+  return (
+    <View className="flex-1 px-4 pt-5" style={{ backgroundColor: palette.background }}>
+      <View className="flex-1 pb-[120px]">
         {searchActive && (
-          <View style={[styles.searchBar, { borderColor: palette.border, backgroundColor: palette.card }]}>
+          <View
+            className="mb-4 flex-row items-center rounded-[14px] border px-3 py-2"
+            style={{ borderColor: palette.border, backgroundColor: palette.card }}
+          >
             <Ionicons name="search" size={18} color={palette.muted} />
             <TextInput
-              style={[styles.searchInput, { color: palette.text }]}
+              className="ml-2.5 flex-1 text-base"
+              style={{ color: palette.text }}
               placeholder="Search conversations"
               placeholderTextColor={palette.muted}
               value={searchQuery}
@@ -192,10 +197,14 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
             ) : null}
           </View>
         )}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: palette.text }]}>Requests</Text>
+        <View className="mb-[18px]">
+          <Text className="mb-2.5 text-base font-semibold" style={{ color: palette.text }}>
+            Requests
+          </Text>
           {requests.length === 0 ? (
-            <Text style={[styles.emptyText, { color: palette.muted }]}>No pending requests.</Text>
+            <Text className="text-sm" style={{ color: palette.muted }}>
+              No pending requests.
+            </Text>
           ) : (
             <FlatList<ConversationRecord>
               data={requests}
@@ -203,35 +212,50 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
               renderItem={({ item }) => {
                 const other = getOtherParticipant(item);
                 return (
-                  <View style={requestCardStyles}>
-                    <Text style={[styles.cardTitle, { color: palette.text }]}>Chat request</Text>
-                    <Text style={[styles.cardMeta, { color: palette.muted }]}>From: {getDisplayName(other)}</Text>
-                    <View style={styles.requestActions}>
+                  <View
+                    className="rounded-[14px] border p-4"
+                    style={{ borderColor: palette.border, backgroundColor: palette.card }}
+                  >
+                    <Text className="text-base font-semibold" style={{ color: palette.text }}>
+                      Chat request
+                    </Text>
+                    <Text className="mt-1.5" style={{ color: palette.muted }}>
+                      From: {getDisplayName(other)}
+                    </Text>
+                    <View className="mt-3 flex-row">
                       <Pressable
-                        style={[styles.acceptButton, { backgroundColor: palette.action }]}
+                        className="mr-2 flex-1 items-center rounded-xl py-2.5"
+                        style={{ backgroundColor: palette.action }}
                         onPress={() => handleAccept(item.id)}
                       >
-                        <Text style={styles.acceptButtonText}>Accept</Text>
+                        <Text className="font-semibold text-white">Accept</Text>
                       </Pressable>
                       <Pressable
-                        style={[styles.declineButton, { borderColor: palette.border }]}
+                        className="flex-1 items-center rounded-xl border py-2.5"
+                        style={{ borderColor: palette.border }}
                         onPress={() => handleDecline(item.id)}
                       >
-                        <Text style={[styles.declineButtonText, { color: palette.text }]}>Decline</Text>
+                        <Text className="font-semibold" style={{ color: palette.text }}>
+                          Decline
+                        </Text>
                       </Pressable>
                     </View>
                   </View>
                 );
               }}
-              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              ItemSeparatorComponent={() => <View className="h-2.5" />}
             />
           )}
         </View>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: palette.text }]}>Chats</Text>
+        <View className="mb-[18px]">
+          <Text className="mb-2.5 text-base font-semibold" style={{ color: palette.text }}>
+            Chats
+          </Text>
           {conversations.length === 0 ? (
-            <Text style={[styles.emptyText, { color: palette.muted }]}>No active chats yet.</Text>
+            <Text className="text-sm" style={{ color: palette.muted }}>
+              No active chats yet.
+            </Text>
           ) : (
             <FlatList<ConversationRecord>
               data={filteredConversations}
@@ -242,15 +266,22 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
                 const preview = item.lastMessageAt ? 'Encrypted message' : 'Start a new secure chat';
                 return (
                   <Pressable
-                    style={chatCardStyles}
+                    className="rounded-[14px] border p-4"
+                    style={{ borderColor: palette.border, backgroundColor: palette.card }}
                     onPress={() => navigation.navigate('Chat', { conversationId: item.id })}
                   >
-                    <View>
-                      <Text style={[styles.chatLabel, { color: palette.text }]}>{getDisplayName(other)}</Text>
-                      <Text style={[styles.chatMeta, { color: palette.muted }]}>{preview}</Text>
+                    <View className="flex-row justify-between">
+                      <View className="flex-1 pr-2">
+                        <Text className="text-base font-medium" style={{ color: palette.text }}>
+                          {getDisplayName(other)}
+                        </Text>
+                        <Text className="mt-1.5 text-xs" style={{ color: palette.muted }}>
+                          {preview}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.chatFooter}>
-                      <Text style={[styles.chatMeta, { color: palette.muted }]}> 
+                    <View className="mt-2.5 flex-row items-center justify-between">
+                      <Text className="text-xs" style={{ color: palette.muted }}>
                         {lastActivity.toLocaleString(undefined, {
                           hour: '2-digit',
                           minute: '2-digit',
@@ -265,194 +296,19 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
                   </Pressable>
                 );
               }}
-              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              ItemSeparatorComponent={() => <View className="h-2.5" />}
             />
           )}
         </View>
       </View>
 
       <Pressable
-        style={[styles.fab, { backgroundColor: palette.action }]}
+        className="absolute bottom-5 h-[70px] w-[70px] items-center justify-center self-center rounded-[35px]"
+        style={[{ backgroundColor: palette.action }, fabShadow]}
         onPress={() => navigation.navigate('NewChat')}
       >
-        <Text style={styles.fabText}>+</Text>
+        <Text className="text-[32px] font-bold text-white">+</Text>
       </Pressable>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 20
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12
-  },
-  headerBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  headerBadgeText: {
-    fontSize: 16,
-    fontWeight: '700'
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700'
-  },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 10,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  searchBar: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 16
-  },
-  headerIconText: {
-    fontSize: 18
-  },
-  content: {
-    flex: 1,
-    paddingBottom: 120
-  },
-  section: {
-    marginBottom: 18
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 10
-  },
-  emptyText: {
-    fontSize: 14
-  },
-  chatCard: {
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start'
-  },
-  requestCard: {
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1
-  },
-  chatLabel: {
-    fontSize: 16,
-    fontWeight: '500'
-  },
-  chatMeta: {
-    fontSize: 12,
-    marginTop: 6,
-    flexShrink: 1
-  },
-  chatFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10
-  },
-  deleteText: {
-    fontSize: 12,
-    fontWeight: '600'
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  cardMeta: {
-    marginTop: 6
-  },
-  requestActions: {
-    flexDirection: 'row',
-    marginTop: 12
-  },
-  acceptButton: {
-    flex: 1,
-    paddingVertical: 10,
-    marginRight: 8,
-    borderRadius: 12,
-    alignItems: 'center'
-  },
-  acceptButtonText: {
-    color: '#ffffff',
-    fontWeight: '600'
-  },
-  declineButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center'
-  },
-  declineButtonText: {
-    fontWeight: '600'
-  },
-  bottomBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16
-  },
-  bottomSpacer: {
-    width: 90
-  },
-  bottomTabText: {
-    fontWeight: '600'
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 20,
-    alignSelf: 'center',
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6
-      },
-      android: {
-        elevation: 8
-      },
-      web: {
-        boxShadow: '0px 4px 6px rgba(0,0,0,0.3)'
-      }
-    })
-  },
-  fabText: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '700'
-  }
-});

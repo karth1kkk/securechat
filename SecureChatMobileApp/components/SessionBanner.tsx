@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
@@ -14,26 +14,16 @@ export const SessionBanner: React.FC<Props> = ({ sessionId, displayName }) => {
   const value = displayName ?? compact;
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.card, borderColor: palette.border }]}>
-      <Text style={[styles.label, { color: palette.muted }]}>{label}</Text>
-      <Text style={[styles.session, { color: palette.text }]}>{value}</Text>
+    <View
+      className="mb-4 rounded-xl border p-3"
+      style={{ backgroundColor: palette.card, borderColor: palette.border }}
+    >
+      <Text className="text-xs" style={{ color: palette.muted }}>
+        {label}
+      </Text>
+      <Text className="mt-1 text-base font-semibold" style={{ color: palette.text }}>
+        {value}
+      </Text>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1
-  },
-  label: {
-    fontSize: 12
-  },
-  session: {
-    fontSize: 16,
-    marginTop: 4,
-    fontWeight: '600'
-  }
-});

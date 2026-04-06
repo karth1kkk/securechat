@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { ApolloError, useQuery } from '@apollo/client';
@@ -98,9 +98,11 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
 
   if (loading && pathNodes.length === 0) {
     return (
-      <View style={[styles.container, styles.centered, { backgroundColor: palette.background }]}>
+      <View className="flex-1 items-center justify-center p-5" style={{ backgroundColor: palette.background }}>
         <ActivityIndicator size="large" color={palette.action} />
-        <Text style={[styles.muted, { color: palette.muted, marginTop: 12 }]}>Loading path…</Text>
+        <Text className="mt-3 text-sm" style={{ color: palette.muted }}>
+          Loading path…
+        </Text>
       </View>
     );
   }
@@ -109,19 +111,22 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
     const apollo = error instanceof ApolloError ? error : null;
     const { detail, hint } = apollo ? describePathLoadError(apollo) : { detail: error.message, hint: undefined };
     return (
-      <View style={[styles.container, styles.centered, { backgroundColor: palette.background }]}>
-        <Text style={[styles.errorText, { color: palette.text }]}>Could not load path</Text>
-        <Text style={[styles.muted, { color: palette.muted, marginTop: 8, textAlign: 'center' }]}>
+      <View className="flex-1 items-center justify-center p-5" style={{ backgroundColor: palette.background }}>
+        <Text className="text-lg font-semibold" style={{ color: palette.text }}>
+          Could not load path
+        </Text>
+        <Text className="mt-2 text-center text-sm" style={{ color: palette.muted }}>
           {detail}
         </Text>
         {hint ? (
-          <Text style={[styles.hint, { color: palette.muted, marginTop: 12, textAlign: 'center' }]}>{hint}</Text>
+          <Text className="mt-3 text-center text-[13px] leading-[18px]" style={{ color: palette.muted }}>
+            {hint}
+          </Text>
         ) : null}
-        <Pressable
-          style={[styles.retry, { backgroundColor: palette.action }]}
-          onPress={() => void refetch()}
-        >
-          <Text style={[styles.retryLabel, { color: palette.background }]}>Retry</Text>
+        <Pressable className="mt-5 rounded-xl px-6 py-3" style={{ backgroundColor: palette.action }} onPress={() => void refetch()}>
+          <Text className="text-base font-semibold" style={{ color: palette.background }}>
+            Retry
+          </Text>
         </Pressable>
       </View>
     );
@@ -129,53 +134,69 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
 
   if (pathNodes.length === 0) {
     return (
-      <View style={[styles.container, styles.centered, { backgroundColor: palette.background }]}>
-        <Text style={[styles.muted, { color: palette.muted }]}>No routing nodes configured.</Text>
-        <Pressable
-          style={[styles.retry, { marginTop: 16, backgroundColor: palette.action }]}
-          onPress={() => void refetch()}
-        >
-          <Text style={[styles.retryLabel, { color: palette.background }]}>Refresh</Text>
+      <View className="flex-1 items-center justify-center p-5" style={{ backgroundColor: palette.background }}>
+        <Text className="text-sm" style={{ color: palette.muted }}>
+          No routing nodes configured.
+        </Text>
+        <Pressable className="mt-4 rounded-xl px-6 py-3" style={{ backgroundColor: palette.action }} onPress={() => void refetch()}>
+          <Text className="text-base font-semibold" style={{ color: palette.background }}>
+            Refresh
+          </Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.background }]}>
-      <Text style={[styles.header, { color: palette.text }]}>Path</Text>
-      <Text style={[styles.subtitle, { color: palette.muted }]}>
+    <View className="flex-1 p-5" style={{ backgroundColor: palette.background }}>
+      <Text className="mb-2 text-[28px] font-bold" style={{ color: palette.text }}>
+        Path
+      </Text>
+      <Text className="mb-4 text-sm leading-5" style={{ color: palette.muted }}>
         Hops between your device and the SecureChat service (from server configuration).
       </Text>
-      <View style={styles.timelineContainer}>
-        <View style={[styles.timelineLine, { backgroundColor: palette.border }]} />
+      <View className="relative flex-1 pl-6">
+        <View className="absolute bottom-6 left-[26px] top-7 w-0.5" style={{ backgroundColor: palette.border }} />
         {pathNodes.map((node, index) => {
           const kind = normalizeRole(node.role);
           const meta = formatNodeMeta(node);
           return (
-            <View key={`${node.label}-${index}`} style={styles.nodeRow}>
-              <View style={styles.dotContainer}>
+            <View key={`${node.label}-${index}`} className="mb-6 flex-row items-start pl-3">
+              <View className="w-[52px] items-center">
                 <Animated.View
-                  style={[
-                    styles.dot,
-                    {
-                      backgroundColor: palette.action,
-                      shadowColor: palette.glow,
-                      transform: [{ scale }]
-                    }
-                  ]}
+                  className="h-5 w-5 rounded-[10px]"
+                  style={{
+                    backgroundColor: palette.action,
+                    shadowColor: palette.glow,
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowRadius: 12,
+                    shadowOpacity: 0.9,
+                    transform: [{ scale }]
+                  }}
                 />
               </View>
-              <View style={styles.nodeContent}>
-                <Text style={[styles.nodeTitle, { color: palette.text }]}>{node.label}</Text>
-                {meta ? <Text style={[styles.nodeMeta, { color: palette.muted }]}>{meta}</Text> : null}
+              <View className="flex-1">
+                <Text className="text-lg font-semibold" style={{ color: palette.text }}>
+                  {node.label}
+                </Text>
+                {meta ? (
+                  <Text className="mt-1 text-sm" style={{ color: palette.muted }}>
+                    {meta}
+                  </Text>
+                ) : null}
                 {kind === 'service' && (
-                  <Text style={[styles.nodeChip, { color: palette.text, borderColor: palette.border }]}>
+                  <Text
+                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
+                    style={{ color: palette.text, borderColor: palette.border }}
+                  >
                     Service
                   </Text>
                 )}
                 {kind === 'entry' && (
-                  <Text style={[styles.nodeChip, { color: palette.text, borderColor: palette.border }]}>
+                  <Text
+                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
+                    style={{ color: palette.text, borderColor: palette.border }}
+                  >
                     Entry
                   </Text>
                 )}
@@ -187,95 +208,3 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  header: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 8
-  },
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16
-  },
-  muted: {
-    fontSize: 14
-  },
-  errorText: {
-    fontSize: 18,
-    fontWeight: '600'
-  },
-  hint: {
-    fontSize: 13,
-    lineHeight: 18
-  },
-  retry: {
-    marginTop: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12
-  },
-  retryLabel: {
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  timelineContainer: {
-    flex: 1,
-    paddingLeft: 24,
-    position: 'relative'
-  },
-  timelineLine: {
-    position: 'absolute',
-    left: 26,
-    top: 28,
-    bottom: 24,
-    width: 2
-  },
-  nodeRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-    paddingLeft: 12
-  },
-  dotContainer: {
-    width: 52,
-    alignItems: 'center'
-  },
-  dot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 12,
-    shadowOpacity: 0.9
-  },
-  nodeContent: {
-    flex: 1
-  },
-  nodeTitle: {
-    fontSize: 18,
-    fontWeight: '600'
-  },
-  nodeMeta: {
-    fontSize: 14,
-    marginTop: 4
-  },
-  nodeChip: {
-    marginTop: 6,
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    fontSize: 12
-  }
-});

@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { cn } from '../lib/cn';
 
 interface Props {
   text: string;
@@ -13,20 +14,23 @@ export const ChatBubble: React.FC<Props> = ({ text, isOutgoing = false, timestam
   const { palette } = useTheme();
   return (
     <View
-      style={[
-        styles.container,
-        {
-          alignSelf: isOutgoing ? 'flex-end' : 'flex-start',
-          backgroundColor: isOutgoing ? palette.bubbleOutgoing : palette.bubbleIncoming
-        }
-      ]}
+      className={cn('my-1 max-w-[80%] rounded-2xl p-3', isOutgoing ? 'self-end' : 'self-start')}
+      style={{
+        backgroundColor: isOutgoing ? palette.bubbleOutgoing : palette.bubbleIncoming
+      }}
     >
-      <Text style={[styles.text, { color: palette.text }]}>{text}</Text>
+      <Text className="text-base" style={{ color: palette.text }}>
+        {text}
+      </Text>
       {(timestamp || (isOutgoing && status)) && (
-        <View style={styles.metaRow}>
-          {timestamp && <Text style={[styles.meta, { color: palette.muted }]}>{timestamp}</Text>}
+        <View className="mt-1 flex-row justify-end">
+          {timestamp && (
+            <Text className="text-[10px]" style={{ color: palette.muted }}>
+              {timestamp}
+            </Text>
+          )}
           {isOutgoing && status && (
-            <Text style={[styles.meta, { color: palette.muted, marginLeft: 8 }]}>
+            <Text className="ml-2 text-[10px]" style={{ color: palette.muted }}>
               {status === 'sending' ? 'Sending…' : 'Sent'}
             </Text>
           )}
@@ -35,23 +39,3 @@ export const ChatBubble: React.FC<Props> = ({ text, isOutgoing = false, timestam
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 12,
-    borderRadius: 16,
-    marginVertical: 4,
-    maxWidth: '80%'
-  },
-  text: {
-    fontSize: 16
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 4
-  },
-  meta: {
-    fontSize: 10
-  }
-});

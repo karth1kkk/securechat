@@ -18,7 +18,9 @@ function WebSafeAreaShell({ children }: { children: React.ReactNode }) {
   return (
     <SafeAreaInsetsContext.Provider value={insets}>
       <SafeAreaFrameContext.Provider value={frame}>
-        <View style={{ flex: 1 }}>{children}</View>
+        <View className="flex-1" style={{ flex: 1 }}>
+          {children}
+        </View>
       </SafeAreaFrameContext.Provider>
     </SafeAreaInsetsContext.Provider>
   );
@@ -28,5 +30,11 @@ export function RootSafeAreaProvider({ children }: { children: React.ReactNode }
   if (Platform.OS === 'web') {
     return <WebSafeAreaShell>{children}</WebSafeAreaShell>;
   }
-  return <SafeAreaProvider>{children}</SafeAreaProvider>;
+  return (
+    <SafeAreaProvider>
+      <View className="flex-1" style={{ flex: 1 }}>
+        {children}
+      </View>
+    </SafeAreaProvider>
+  );
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
@@ -37,11 +37,17 @@ export const PinLock: React.FC<Props> = ({ onUnlock, onCreate, hasPin, visible }
   };
 
   return (
-    <View style={styles.overlay}>
-      <View style={[styles.card, { backgroundColor: palette.card, borderColor: palette.border }]}>
-        <Text style={[styles.title, { color: palette.text }]}>{hasPin ? 'Unlock SecureChat' : 'Create a PIN'}</Text>
+    <View style={[StyleSheet.absoluteFillObject, styles.overlay]} className="items-center justify-center p-6">
+      <View
+        className="w-full max-w-md rounded-2xl border p-6"
+        style={{ backgroundColor: palette.card, borderColor: palette.border }}
+      >
+        <Text className="mb-3 text-lg" style={{ color: palette.text }}>
+          {hasPin ? 'Unlock SecureChat' : 'Create a PIN'}
+        </Text>
         <TextInput
-          style={[styles.input, { borderColor: palette.border, color: palette.text }]}
+          className="mb-2 rounded-xl border p-3 text-lg"
+          style={{ borderColor: palette.border, color: palette.text }}
           keyboardType="number-pad"
           secureTextEntry
           placeholder="••••"
@@ -51,9 +57,17 @@ export const PinLock: React.FC<Props> = ({ onUnlock, onCreate, hasPin, visible }
             setValue(sanitized);
           }}
         />
-        {!!message && <Text style={[styles.message, { color: palette.action }]}>{message}</Text>}
-        <TouchableOpacity style={[styles.button, { backgroundColor: palette.action }]} onPress={handlePress}>
-          <Text style={styles.buttonText}>{hasPin ? 'Unlock' : 'Save PIN'}</Text>
+        {!!message && (
+          <Text className="mt-1" style={{ color: palette.action }}>
+            {message}
+          </Text>
+        )}
+        <TouchableOpacity
+          className="mt-3 items-center rounded-xl p-3"
+          style={{ backgroundColor: palette.action }}
+          onPress={handlePress}
+        >
+          <Text className="font-semibold text-white">{hasPin ? 'Unlock' : 'Save PIN'}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -62,50 +76,7 @@ export const PinLock: React.FC<Props> = ({ onUnlock, onCreate, hasPin, visible }
 
 const styles = StyleSheet.create({
   overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
     zIndex: 10
-  },
-  card: {
-    width: '100%',
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)'
-  },
-  title: {
-    color: '#ffffff',
-    fontSize: 18,
-    marginBottom: 12
-  },
-  input: {
-    borderColor: 'rgba(255,255,255,0.35)',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    color: '#ffffff',
-    fontSize: 18,
-    marginBottom: 8
-  },
-  button: {
-    marginTop: 12,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center'
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontWeight: '600'
-  },
-  message: {
-    color: '#ffcccb',
-    marginTop: 4
   }
 });

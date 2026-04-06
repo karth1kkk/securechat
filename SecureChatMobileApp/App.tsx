@@ -1,9 +1,10 @@
+import './global.css';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ApolloProvider } from '@apollo/client';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
 import { apolloClient } from './graphql/client';
 import { ChatListScreen } from './screens/ChatListScreen';
 import { ChatScreen } from './screens/ChatScreen';
@@ -25,6 +26,12 @@ import { ThemeProvider, useTheme } from './theme/ThemeContext';
 import { preferencesService } from './services/preferencesService';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { RootSafeAreaProvider } from './components/RootSafeAreaProvider';
+import { cn } from './lib/cn';
+
+const rootViewStyle =
+  Platform.OS === 'web'
+    ? ({ flex: 1, width: '100%', height: '100%', minHeight: '100%' } as const)
+    : ({ flex: 1 } as const);
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -111,11 +118,19 @@ const SecureChatApp: React.FC = () => {
 
   if (sessionError) {
     return (
-      <View style={[styles.centered, { backgroundColor: palette.background }]}> 
-        <Text style={[styles.errorTitle, { color: palette.text }]}>Session unavailable</Text>
-        <Text style={[styles.errorMessage, { color: palette.text }]}>{sessionError}</Text>
-        <Pressable style={[styles.errorButton, { backgroundColor: palette.action }]} onPress={initializeSession}>
-          <Text style={styles.errorButtonText}>Retry</Text>
+      <View className="flex-1 items-center justify-center px-6" style={[rootViewStyle, { backgroundColor: palette.background }]}>
+        <Text className="mb-2 text-center text-xl font-semibold" style={{ color: palette.text }}>
+          Session unavailable
+        </Text>
+        <Text className="mb-4 text-center" style={{ color: palette.text }}>
+          {sessionError}
+        </Text>
+        <Pressable
+          className="rounded-xl px-8 py-3"
+          style={{ backgroundColor: palette.action }}
+          onPress={initializeSession}
+        >
+          <Text className="font-semibold text-white">Retry</Text>
         </Pressable>
       </View>
     );
@@ -123,18 +138,21 @@ const SecureChatApp: React.FC = () => {
 
   if (!sessionReady) {
     return (
-      <View style={[styles.centered, { backgroundColor: palette.background }]}> 
+      <View className="flex-1 items-center justify-center" style={[rootViewStyle, { backgroundColor: palette.background }]}>
         <ActivityIndicator size="large" color={palette.action} />
-        <Text style={[styles.loadingText, { color: palette.text }]}>Initializing secure session…</Text>
+        <Text className="mt-3" style={{ color: palette.text }}>
+          Initializing secure session…
+        </Text>
       </View>
     );
   }
 
   return (
-    <>
-      <NavigationContainer theme={navigationTheme}>
-        <StatusBar style={palette.statusBarStyle} />
-        <Stack.Navigator
+    <View style={rootViewStyle}>
+      <View style={{ flex: 1 }}>
+        <NavigationContainer theme={navigationTheme}>
+          <StatusBar style={palette.statusBarStyle} />
+          <Stack.Navigator
           screenOptions={{
             headerStyle: { backgroundColor: palette.header },
             headerTintColor: palette.text,
@@ -151,12 +169,15 @@ const SecureChatApp: React.FC = () => {
                 headerTitleAlign: 'center',
                 headerLeft: () => (
                   <Pressable
-                    style={[styles.headerButton, { borderColor: palette.border }]}
+                    className={cn('mx-3.5 h-[38px] w-[38px] items-center justify-center rounded-full border')}
+                    style={{ borderColor: palette.border }}
                     onPress={() => navigation.navigate('Settings')}
                   >
-                    <Text style={[styles.headerButtonText, { color: palette.text }]}>{initial}</Text>
+                    <Text className="font-bold" style={{ color: palette.text }}>
+                      {initial}
+                    </Text>
                   </Pressable>
-                ),
+                )
               };
             }}
           />
@@ -177,16 +198,17 @@ const SecureChatApp: React.FC = () => {
             options={{ title: 'Conversations' }}
           />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
-        </Stack.Navigator>
-      </NavigationContainer>
+          </Stack.Navigator>
+        </NavigationContainer>
+      </View>
       <PinLock onUnlock={handleUnlock} onCreate={handleCreate} hasPin={hasPin} visible={locked} />
-    </>
+    </View>
   );
 };
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={rootViewStyle} className="flex-1">
       <RootSafeAreaProvider>
         <ApolloProvider client={apolloClient}>
           <ThemeProvider>
@@ -197,46 +219,3 @@ export default function App() {
     </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 8
-  },
-  errorMessage: {
-    textAlign: 'center',
-    marginHorizontal: 24,
-    marginBottom: 16
-  },
-  errorButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 12
-  },
-  errorButtonText: {
-    color: '#ffffff',
-    fontWeight: '600'
-  },
-  loadingText: {
-    marginTop: 12
-  }
-  ,
-  headerButton: {
-    marginHorizontal: 14,
-    width: 38,
-    height: 38,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  headerButtonText: {
-    fontWeight: '700'
-  }
-});

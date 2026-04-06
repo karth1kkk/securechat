@@ -1,14 +1,6 @@
 import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  View
-} from 'react-native';
+import { Alert, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useFocusEffect } from '@react-navigation/native';
@@ -172,7 +164,7 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => setProfileEditOpen(true)} style={styles.headerIcon}>
+        <Pressable onPress={() => setProfileEditOpen(true)} className="mr-2.5 p-1.5">
           <Feather name="edit" size={20} color={palette.action} />
         </Pressable>
       )
@@ -181,65 +173,122 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
 
   return (
     <>
-    <ScrollView style={[styles.container, { backgroundColor: palette.background }]} contentContainerStyle={styles.content}>
-      <View style={[styles.profileCard, { backgroundColor: palette.surface, shadowColor: palette.shadow }]}> 
-        <View style={styles.avatarRow}>
-          <View style={styles.avatarBorder}> 
-            <Pressable style={[styles.avatar, { backgroundColor: palette.card }]} onPress={() => setProfileEditOpen(true)}>
-              <Text style={[styles.initials, { color: palette.text }]}>{initials}</Text>
+    <ScrollView
+      className="flex-1"
+      style={{ backgroundColor: palette.background }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+    >
+      <View
+        className="mb-5 items-center rounded-[20px] p-5"
+        style={{
+          backgroundColor: palette.surface,
+          shadowColor: palette.shadow,
+          shadowOffset: { width: 0, height: 15 },
+          shadowOpacity: 0.5,
+          shadowRadius: 30,
+          elevation: 10
+        }}
+      >
+        <View className="flex-row items-center justify-center">
+          <View className="relative">
+            <Pressable
+              className="h-[88px] w-[88px] items-center justify-center rounded-full"
+              style={{ backgroundColor: palette.card }}
+              onPress={() => setProfileEditOpen(true)}
+            >
+              <Text className="text-[32px] font-bold" style={{ color: palette.text }}>
+                {initials}
+              </Text>
             </Pressable>
-            <Pressable style={[styles.editBadge, { backgroundColor: palette.action }]} onPress={() => setProfileEditOpen(true)}>
+            <Pressable
+              className="absolute -bottom-1.5 -right-1.5 h-8 w-8 items-center justify-center rounded-full"
+              style={{ backgroundColor: palette.action }}
+              onPress={() => setProfileEditOpen(true)}
+            >
               <Feather name="edit-3" size={14} color="#fff" />
             </Pressable>
-            <View style={[styles.plusBadge, { backgroundColor: palette.surface, shadowColor: palette.shadow }]}> 
+            <View
+              className="absolute right-2.5 top-2.5 h-5 w-5 items-center justify-center rounded-[10px]"
+              style={{
+                backgroundColor: palette.surface,
+                borderColor: 'rgba(255,255,255,0.2)',
+                shadowColor: palette.shadow,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.5,
+                shadowRadius: 6,
+                elevation: 4,
+                borderWidth: 1
+              }}
+            >
               <Feather name="plus" size={12} color={palette.action} />
             </View>
           </View>
         </View>
-        <Text style={[styles.username, styles.centeredText, { color: palette.text }]}>{username ?? 'SecureChat User'}</Text>
-        <Text style={[styles.subHeading, styles.centeredText, { color: palette.muted }]}>Your Account ID</Text>
+        <Text className="mt-4 text-center text-2xl font-bold" style={{ color: palette.text }}>
+          {username ?? 'SecureChat User'}
+        </Text>
+        <Text className="mt-1.5 text-center text-xs" style={{ color: palette.muted }}>
+          Your Account ID
+        </Text>
         <Text
-          style={[styles.sessionId, styles.centeredText, { color: palette.text }]}
+          className="mt-1 text-center text-sm leading-5"
+          style={{ color: palette.text }}
           numberOfLines={2}
           ellipsizeMode="middle"
         >
           {sessionId ?? 'Generating…'}
         </Text>
-        <View style={styles.buttonRow}>
-          <Pressable style={[styles.actionButton, styles.actionButtonLeft, { borderColor: palette.border }]} onPress={handleShareId}>
+        <View className="mt-4 flex-row">
+          <Pressable
+            className="mr-3 flex-1 flex-row items-center justify-center rounded-2xl border p-3"
+            style={{ borderColor: palette.border }}
+            onPress={handleShareId}
+          >
             <Feather name="share" size={16} color={palette.action} />
-            <Text style={[styles.actionLabel, { color: palette.action }]}>Share</Text>
+            <Text className="ml-1.5 font-semibold" style={{ color: palette.action }}>
+              Share
+            </Text>
           </Pressable>
-          <Pressable style={[styles.actionButton, { borderColor: palette.border }]} onPress={handleCopyId}>
+          <Pressable
+            className="flex-1 flex-row items-center justify-center rounded-2xl border p-3"
+            style={{ borderColor: palette.border }}
+            onPress={handleCopyId}
+          >
             <Feather name="copy" size={16} color={palette.action} />
-            <Text style={[styles.actionLabel, { color: palette.action }]}>Copy</Text>
+            <Text className="ml-1.5 font-semibold" style={{ color: palette.action }}>
+              Copy
+            </Text>
           </Pressable>
         </View>
-        {feedback ? <Text style={[styles.feedback, { color: palette.action }]}>{feedback}</Text> : null}
+        {feedback ? (
+          <Text className="mt-2.5 text-[13px]" style={{ color: palette.action }}>
+            {feedback}
+          </Text>
+        ) : null}
       </View>
-      <View style={styles.sections}> 
+      <View className="mb-[30px]">
         {menuSections.map((section, index) => (
-          <View key={`section-${index}`} style={styles.sectionCard}> 
+          <View key={`section-${index}`} className="mb-4 rounded-[18px] bg-transparent p-3">
             {section.map((item) => (
               <Pressable
                 key={item.label}
-                style={({ pressed }) => [
-                  styles.menuItem,
-                  {
-                    backgroundColor: pressed ? palette.card : palette.surface,
-                    borderColor: item.destructive ? '#f87171' : palette.border
-                  }
-                ]}
+                className="mb-2 flex-row items-center justify-between rounded-2xl border p-3.5"
+                style={({ pressed }) => ({
+                  backgroundColor: pressed ? palette.card : palette.surface,
+                  borderColor: item.destructive ? '#f87171' : palette.border
+                })}
                 onPress={item.onPress}
               >
-                <View style={styles.menuRow}> 
+                <View className="flex-row items-center">
                   <Feather
                     name={item.icon}
                     size={18}
-                    style={styles.menuIcon}
+                    style={{ marginRight: 12 }}
                     color={item.destructive ? '#f87171' : palette.text}
                   />
-                  <Text style={[styles.menuLabel, { color: item.destructive ? '#f87171' : palette.text }]}>{item.label}</Text>
+                  <Text className="text-base font-semibold" style={{ color: item.destructive ? '#f87171' : palette.text }}>
+                    {item.label}
+                  </Text>
                 </View>
                 <Feather name="chevron-right" size={18} color={palette.muted} />
               </Pressable>
@@ -247,7 +296,9 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
           </View>
         ))}
       </View>
-      <Text style={[styles.footer, { color: palette.muted }]}>SecureChat • v{appVersion}</Text>
+      <Text className="text-center text-xs" style={{ color: palette.muted }}>
+        SecureChat • v{appVersion}
+      </Text>
     </ScrollView>
     <ProfileEditSheet
       visible={profileEditOpen}
@@ -257,146 +308,3 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
     </>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 24
-  },
-  profileCard: {
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
-    shadowOffset: { width: 0, height: 15 },
-    shadowOpacity: 0.5,
-    shadowRadius: 30,
-    elevation: 10,
-    alignItems: 'center'
-  },
-  avatarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarBorder: {
-    position: 'relative'
-  },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  initials: {
-    fontSize: 32,
-    fontWeight: '700'
-  },
-  editBadge: {
-    position: 'absolute',
-    right: -6,
-    bottom: -6,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  plusBadge: {
-    position: 'absolute',
-    right: 10,
-    top: 10,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 4
-  },
-  username: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginTop: 16
-  },
-  subHeading: {
-    fontSize: 12,
-    marginTop: 6
-  },
-  sessionId: {
-    fontSize: 14,
-    marginTop: 4,
-    lineHeight: 20
-  },
-  centeredText: {
-    textAlign: 'center'
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    marginTop: 16
-  },
-  actionButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  actionButtonLeft: {
-    marginRight: 12
-  },
-  actionLabel: {
-    marginLeft: 6,
-    fontWeight: '600'
-  },
-  feedback: {
-    marginTop: 10,
-    fontSize: 13
-  },
-  sections: {
-    marginBottom: 30
-  },
-  sectionCard: {
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 16,
-    backgroundColor: 'transparent'
-  },
-  menuItem: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  menuRow: {
-    flexDirection: 'row',
-    alignItems: 'center'
-  },
-  menuLabel: {
-    fontSize: 16,
-    fontWeight: '600'
-  },
-  menuIcon: {
-    marginRight: 12
-  },
-  footer: {
-    fontSize: 12,
-    textAlign: 'center'
-  },
-  headerIcon: {
-    padding: 6,
-    marginRight: 10
-  }
-});

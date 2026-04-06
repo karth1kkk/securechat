@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* React Native Web: root must fill viewport or flex-1 chains collapse */
+html,
+body,
+#root {
+  height: 100%;
+}

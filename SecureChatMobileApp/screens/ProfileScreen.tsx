@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import { useApolloClient } from '@apollo/client';
 import * as Clipboard from 'expo-clipboard';
 import { UPDATE_USERNAME } from '../graphql/mutations';
@@ -7,6 +7,8 @@ import { sessionService } from '../services/sessionService';
 import { preferencesService } from '../services/preferencesService';
 import { useTheme } from '../theme/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { cn } from '../lib/cn';
+
 const accentOptions = ['#1a9cff', '#e91e63', '#00c853', '#ff9800'];
 
 export const ProfileScreen: React.FC = () => {
@@ -53,146 +55,86 @@ export const ProfileScreen: React.FC = () => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.background }]}> 
-      {/* <Text style={[styles.heading, { color: palette.text }]}>Profile</Text> */}
+    <View className="flex-1 p-4" style={{ backgroundColor: palette.background }}>
       <TextInput
         placeholder="Display name (optional)"
         placeholderTextColor={palette.placeholder}
-        style={[styles.input, { borderColor: palette.border, color: palette.text }]}
+        className="mb-3 rounded-xl border p-3"
+        style={{ borderColor: palette.border, color: palette.text }}
         value={username}
         onChangeText={setUsername}
         editable={!saving}
       />
-      <Pressable style={[styles.button, { backgroundColor: palette.action }]} onPress={handleSaveUsername} disabled={saving}>
-        <Text style={styles.buttonText}>{saving ? 'Saving…' : 'Save username'}</Text>
+      <Pressable
+        className="items-center rounded-xl p-3.5"
+        style={{ backgroundColor: palette.action }}
+        onPress={handleSaveUsername}
+        disabled={saving}
+      >
+        <Text className="font-semibold text-white">{saving ? 'Saving…' : 'Save username'}</Text>
       </Pressable>
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: palette.muted }]}>Session ID</Text>
-        <View style={[styles.row, { borderColor: palette.border }]}> 
-          <Text style={[styles.value, { color: palette.text }]} numberOfLines={2} ellipsizeMode="middle">
+      <View className="mt-6">
+        <Text className="mb-2 text-sm" style={{ color: palette.muted }}>
+          Session ID
+        </Text>
+        <View className="flex-row flex-wrap items-center justify-between rounded-xl border p-2" style={{ borderColor: palette.border }}>
+          <Text className="mb-1 flex-[0.9] text-sm" style={{ color: palette.text }} numberOfLines={2} ellipsizeMode="middle">
             {sessionId ?? 'Loading…'}
           </Text>
-          <Pressable style={styles.copyButton} onPress={handleCopy} accessibilityLabel="Copy session id">
+          <Pressable className="rounded-[10px] border border-transparent px-3 py-1.5" onPress={handleCopy} accessibilityLabel="Copy session id">
             <Ionicons name="copy-outline" size={18} color={palette.action} />
           </Pressable>
         </View>
       </View>
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: palette.muted }]}>Theme</Text>
-        <View style={styles.row}> 
+      <View className="mt-6">
+        <Text className="mb-2 text-sm" style={{ color: palette.muted }}>
+          Theme
+        </Text>
+        <View className="flex-row flex-wrap items-center justify-between">
           <Pressable
-            style={[styles.modeButton, preference.mode === 'light' && { borderColor: palette.action }]}
+            className={cn('mr-2 flex-1 items-center rounded-xl border px-3 py-3', preference.mode === 'light' && 'border-2')}
+            style={{ borderColor: preference.mode === 'light' ? palette.action : 'transparent' }}
             onPress={() => setMode('light')}
           >
-            <Text style={[styles.optionText, { color: preference.mode === 'light' ? palette.action : palette.text }]}>Light</Text>
+            <Text className="font-semibold" style={{ color: preference.mode === 'light' ? palette.action : palette.text }}>
+              Light
+            </Text>
           </Pressable>
           <Pressable
-            style={[styles.modeButton, preference.mode === 'dark' && { borderColor: palette.action }]}
+            className={cn('flex-1 items-center rounded-xl border px-3 py-3', preference.mode === 'dark' && 'border-2')}
+            style={{ borderColor: preference.mode === 'dark' ? palette.action : 'transparent' }}
             onPress={() => setMode('dark')}
           >
-            <Text style={[styles.optionText, { color: preference.mode === 'dark' ? palette.action : palette.text }]}>Dark</Text>
+            <Text className="font-semibold" style={{ color: preference.mode === 'dark' ? palette.action : palette.text }}>
+              Dark
+            </Text>
           </Pressable>
         </View>
       </View>
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: palette.muted }]}>Accent color</Text>
-        <View style={styles.accentRow}>
+      <View className="mt-6">
+        <Text className="mb-2 text-sm" style={{ color: palette.muted }}>
+          Accent color
+        </Text>
+        <View className="mt-2 flex-row">
           {accentOptions.map((color) => (
             <Pressable
               key={color}
-              style={[styles.accentCircle, { backgroundColor: color }, preference.accentColor === color && styles.accentActive]}
+              className="mr-3 h-10 w-10 rounded-full"
+              style={{
+                backgroundColor: color,
+                borderWidth: preference.accentColor === color ? 2 : 0,
+                borderColor: '#fff'
+              }}
               onPress={() => setAccent(color)}
             />
           ))}
         </View>
       </View>
-      {feedback ? <Text style={[styles.feedback, { color: feedback.includes('copied') ? palette.action : '#ff8f8f' }]}>{feedback}</Text> : null}
+      {feedback ? (
+        <Text className="mt-4 text-center text-sm" style={{ color: feedback.includes('copied') ? palette.action : '#ff8f8f' }}>
+          {feedback}
+        </Text>
+      ) : null}
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 16
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12
-  },
-  button: {
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center'
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontWeight: '600'
-  },
-  section: {
-    marginTop: 24
-  },
-  label: {
-    fontSize: 14,
-    marginBottom: 8
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap'
-  },
-  value: {
-    flexBasis: '90%',
-    fontSize: 14,
-    marginBottom: 4
-  },
-  copy: {
-    fontWeight: '600'
-  },
-  copyButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'transparent'
-  },
-  modeButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    marginRight: 8
-  },
-  optionText: {
-    fontWeight: '600'
-  },
-  accentRow: {
-    flexDirection: 'row',
-    marginTop: 8
-  },
-  accentCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12
-  },
-  accentActive: {
-    borderWidth: 2,
-    borderColor: '#ffffff'
-  },
-  feedback: {
-    marginTop: 16,
-    fontSize: 14,
-    textAlign: 'center'
-  }
-});

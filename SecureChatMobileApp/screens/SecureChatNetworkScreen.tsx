@@ -1,13 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View
-} from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { useQuery } from '@apollo/client';
@@ -103,52 +95,66 @@ export const SecureChatNetworkScreen: React.FC<
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: palette.background }]}
-      contentContainerStyle={styles.content}
+      className="flex-1"
+      style={{ backgroundColor: palette.background }}
+      contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.action} />
       }
     >
-      <Text style={[styles.title, { color: palette.text }]}>SecureChat Network</Text>
-      <Text style={[styles.body, { color: palette.muted }]}>
+      <Text className="mb-3 text-2xl font-bold" style={{ color: palette.text }}>
+        SecureChat Network
+      </Text>
+      <Text className="mb-5 text-[15px] leading-[22px]" style={{ color: palette.muted }}>
         SecureChat uses end-to-end encryption: your messages are encrypted on your device. The server stores
         only ciphertext and relay metadata—it cannot read message content. This is different from Session’s
         decentralized onion routing; traffic between the app and this service uses TLS to our API and
         WebSockets to the realtime hub.
       </Text>
 
-      <View style={[styles.card, { borderColor: palette.border, backgroundColor: palette.surface }]}>
-        <Text style={[styles.cardTitle, { color: palette.text }]}>Connection checks</Text>
-        <View style={styles.row}>
-          <Text style={[styles.rowLabel, { color: palette.text }]}>Backend (HTTP)</Text>
+      <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
+        <Text className="mb-3 text-base font-semibold" style={{ color: palette.text }}>
+          Connection checks
+        </Text>
+        <View className="mb-2.5 flex-row items-center justify-between">
+          <Text className="text-[15px]" style={{ color: palette.text }}>
+            Backend (HTTP)
+          </Text>
           {graphqlStatus === 'checking' ? (
             <ActivityIndicator size="small" color={palette.action} />
           ) : (
-            <Text style={[styles.rowValue, { color: statusColor(graphqlStatus) }]}>
+            <Text className="text-[15px] font-semibold" style={{ color: statusColor(graphqlStatus) }}>
               {statusLabel(graphqlStatus)}
             </Text>
           )}
         </View>
-        <View style={styles.row}>
-          <Text style={[styles.rowLabel, { color: palette.text }]}>SignalR hub</Text>
+        <View className="mb-2.5 flex-row items-center justify-between">
+          <Text className="text-[15px]" style={{ color: palette.text }}>
+            SignalR hub
+          </Text>
           {signalRStatus === 'checking' ? (
             <ActivityIndicator size="small" color={palette.action} />
           ) : (
-            <Text style={[styles.rowValue, { color: statusColor(signalRStatus) }]}>
+            <Text className="text-[15px] font-semibold" style={{ color: statusColor(signalRStatus) }}>
               {statusLabel(signalRStatus)}
             </Text>
           )}
         </View>
         <Pressable
-          style={[styles.retryBtn, { borderColor: palette.border }]}
+          className="mt-2 self-start rounded-[10px] border px-3.5 py-2"
+          style={{ borderColor: palette.border }}
           onPress={() => void runProbes()}
         >
-          <Text style={[styles.retryText, { color: palette.text }]}>Test again</Text>
+          <Text className="text-sm font-semibold" style={{ color: palette.text }}>
+            Test again
+          </Text>
         </Pressable>
       </View>
 
-      <View style={[styles.card, { borderColor: palette.border, backgroundColor: palette.surface }]}>
-        <Text style={[styles.cardTitle, { color: palette.text }]}>Deployment</Text>
+      <View className="mb-4 rounded-2xl border p-4" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
+        <Text className="mb-3 text-base font-semibold" style={{ color: palette.text }}>
+          Deployment
+        </Text>
         {loading && !info ? (
           <ActivityIndicator size="small" color={palette.action} style={{ marginVertical: 8 }} />
         ) : (
@@ -173,74 +179,12 @@ const MetaRow = ({
   value?: string | null;
   palette: { muted: string; text: string };
 }) => (
-  <View style={styles.metaRow}>
-    <Text style={[styles.metaLabel, { color: palette.muted }]}>{label}</Text>
-    <Text style={[styles.metaValue, { color: palette.text }]}>{value?.trim() || '—'}</Text>
+  <View className="mb-2.5">
+    <Text className="mb-0.5 text-[13px]" style={{ color: palette.muted }}>
+      {label}
+    </Text>
+    <Text className="text-[15px]" style={{ color: palette.text }}>
+      {value?.trim() || '—'}
+    </Text>
   </View>
 );
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 12
-  },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 20
-  },
-  card: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10
-  },
-  rowLabel: {
-    fontSize: 15
-  },
-  rowValue: {
-    fontSize: 15,
-    fontWeight: '600'
-  },
-  retryBtn: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1
-  },
-  retryText: {
-    fontSize: 14,
-    fontWeight: '600'
-  },
-  metaRow: {
-    marginBottom: 10
-  },
-  metaLabel: {
-    fontSize: 13,
-    marginBottom: 2
-  },
-  metaValue: {
-    fontSize: 15
-  }
-});

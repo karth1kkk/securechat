@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { encryptionService } from '../services/encryptionService';
 import { apolloClient } from '../graphql/client';
@@ -68,61 +68,49 @@ export const SecurityCenterScreen: React.FC = () => {
 
   if (!session) {
     return (
-      <View style={[styles.container, { backgroundColor: palette.background }]}>
-        <Text style={[styles.text, { color: palette.text }]}>Loading security details…</Text>
+      <View className="flex-1 p-4" style={{ backgroundColor: palette.background }}>
+        <Text className="text-base" style={{ color: palette.text }}>
+          Loading security details…
+        </Text>
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.background }]}>
-      {/* <Text style={[styles.title, { color: palette.text }]}>Security Center</Text> */}
+    <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1, padding: 16, backgroundColor: palette.background }}>
       <SessionBanner sessionId={session.sessionId} displayName={localUsername} />
-      <Text style={[styles.label, { color: palette.muted }]}>Session ID</Text>
-      <Text style={[styles.value, { color: palette.text }]}>{session.sessionId}</Text>
-      <Text style={[styles.label, { color: palette.muted }]}>Public Key</Text>
-      <Text style={[styles.value, { color: palette.text }]}>{session.publicKey.slice(0, 40)}…</Text>
-      <Text style={[styles.label, { color: palette.muted }]}>Device</Text>
-      <Text style={[styles.value, { color: palette.text }]}>{session.deviceName}</Text>
-      <Text style={[styles.label, { color: palette.muted }]}>Created At</Text>
-      <Text style={[styles.value, { color: palette.text }]}>{new Date(session.createdAt).toLocaleString()}</Text>
-      <Pressable style={[styles.button, { backgroundColor: palette.action }]} onPress={rotateKeys}>
-        <Text style={[styles.buttonText, { color: '#ffffff' }]}>Rotate Keys</Text>
+      <Text className="mt-4 text-sm" style={{ color: palette.muted }}>
+        Session ID
+      </Text>
+      <Text className="mt-1" style={{ color: palette.text }}>
+        {session.sessionId}
+      </Text>
+      <Text className="mt-4 text-sm" style={{ color: palette.muted }}>
+        Public Key
+      </Text>
+      <Text className="mt-1" style={{ color: palette.text }}>
+        {session.publicKey.slice(0, 40)}…
+      </Text>
+      <Text className="mt-4 text-sm" style={{ color: palette.muted }}>
+        Device
+      </Text>
+      <Text className="mt-1" style={{ color: palette.text }}>
+        {session.deviceName}
+      </Text>
+      <Text className="mt-4 text-sm" style={{ color: palette.muted }}>
+        Created At
+      </Text>
+      <Text className="mt-1" style={{ color: palette.text }}>
+        {new Date(session.createdAt).toLocaleString()}
+      </Text>
+      <Pressable className="mt-6 items-center rounded-xl p-3.5" style={{ backgroundColor: palette.action }} onPress={rotateKeys}>
+        <Text className="font-semibold text-white">Rotate Keys</Text>
       </Pressable>
-      {feedback ? <Text style={[styles.feedback, { color: palette.action }]}>{feedback}</Text> : null}
+      {feedback ? (
+        <Text className="mt-3 text-sm" style={{ color: palette.action }}>
+          {feedback}
+        </Text>
+      ) : null}
     </ScrollView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    flexGrow: 1
-  },
-  title: {
-    fontSize: 24,
-    marginBottom: 16
-  },
-  label: {
-    marginTop: 16
-  },
-  value: {
-    marginTop: 4
-  },
-  button: {
-    marginTop: 24,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center'
-  },
-  buttonText: {
-    fontWeight: '600'
-  },
-  feedback: {
-    marginTop: 12,
-    fontSize: 14
-  },
-  text: {
-    fontSize: 16
-  }
-});
