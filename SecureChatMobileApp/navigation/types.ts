@@ -6,7 +6,7 @@ export type RootStackParamList = {
   SecurityCenter: undefined;
   Profile: undefined;
   Path: undefined;
+  SecureChatNetwork: undefined;
   Appearance: undefined;
-  ProfileEditModal: undefined;
   ConversationsSettings: undefined;
 };

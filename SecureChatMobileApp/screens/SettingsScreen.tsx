@@ -18,6 +18,7 @@ import { sessionService } from '../services/sessionService';
 import { useTheme } from '../theme/ThemeContext';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ProfileEditSheet } from '../components/ProfileEditSheet';
 
 type MenuItem = {
   label: string;
@@ -31,6 +32,7 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
   const [username, setUsername] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -111,9 +113,9 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
         onPress: () => navigation.navigate('Path')
       },
       {
-        label: 'Session Network',
+        label: 'SecureChat Network',
         icon: 'cloud',
-        onPress: () => Alert.alert('Session Network', 'Routing info will appear here soon.')
+        onPress: () => navigation.navigate('SecureChatNetwork')
       }
     ],
     [
@@ -170,7 +172,7 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => navigation.navigate('ProfileEditModal')} style={styles.headerIcon}>
+        <Pressable onPress={() => setProfileEditOpen(true)} style={styles.headerIcon}>
           <Feather name="edit" size={20} color={palette.action} />
         </Pressable>
       )
@@ -178,14 +180,15 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
   }, [navigation, palette.action]);
 
   return (
+    <>
     <ScrollView style={[styles.container, { backgroundColor: palette.background }]} contentContainerStyle={styles.content}>
       <View style={[styles.profileCard, { backgroundColor: palette.surface, shadowColor: palette.shadow }]}> 
         <View style={styles.avatarRow}>
           <View style={styles.avatarBorder}> 
-            <Pressable style={[styles.avatar, { backgroundColor: palette.card }]} onPress={() => navigation.navigate('ProfileEditModal')}>
+            <Pressable style={[styles.avatar, { backgroundColor: palette.card }]} onPress={() => setProfileEditOpen(true)}>
               <Text style={[styles.initials, { color: palette.text }]}>{initials}</Text>
             </Pressable>
-            <Pressable style={[styles.editBadge, { backgroundColor: palette.action }]} onPress={() => navigation.navigate('ProfileEditModal')}>
+            <Pressable style={[styles.editBadge, { backgroundColor: palette.action }]} onPress={() => setProfileEditOpen(true)}>
               <Feather name="edit-3" size={14} color="#fff" />
             </Pressable>
             <View style={[styles.plusBadge, { backgroundColor: palette.surface, shadowColor: palette.shadow }]}> 
@@ -246,6 +249,12 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
       </View>
       <Text style={[styles.footer, { color: palette.muted }]}>SecureChat • v{appVersion}</Text>
     </ScrollView>
+    <ProfileEditSheet
+      visible={profileEditOpen}
+      onClose={() => setProfileEditOpen(false)}
+      onSaved={() => void preferencesService.getUsername().then(setUsername)}
+    />
+    </>
   );
 };
 
@@ -387,6 +396,7 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   headerIcon: {
-    padding: 6
+    padding: 6,
+    marginRight: 10
   }
 });

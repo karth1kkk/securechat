@@ -2,19 +2,59 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IdentityModel.Tokens.Jwt;
+using System.Reflection;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using HotChocolate;
 using HotChocolate.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using SecureChatBackend.Application.Interfaces;
 using SecureChatBackend.Application.Services;
+using SecureChatBackend.Configuration;
 
 namespace SecureChatBackend.GraphQL;
 
 public sealed class Query
 {
+    [GraphQLName("health")]
+    public string Health() => "ok";
+
+    [GraphQLName("secureChatNetworkInfo")]
+    public SecureChatNetworkInfoDto GetSecureChatNetworkInfo(
+        [Service] IOptions<SecureChatNetworkOptions> options,
+        [Service] IHostEnvironment environment)
+    {
+        var o = options.Value;
+        var apiRegion = !string.IsNullOrWhiteSpace(o.ApiRegion)
+            ? o.ApiRegion
+            : Environment.GetEnvironmentVariable("AWS_REGION");
+        var deploymentId = !string.IsNullOrWhiteSpace(o.DeploymentId)
+            ? o.DeploymentId
+            : Environment.GetEnvironmentVariable("SECURECHAT_DEPLOYMENT_LABEL");
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+        var nodes = o.Nodes
+            .Select(n => new NetworkPathNodeDto
+            {
+                Role = n.Role,
+                Label = n.Label,
+                CountryCode = n.CountryCode,
+                Region = n.Region
+            })
+            .ToList();
+
+        return new SecureChatNetworkInfoDto
+        {
+            ApiRegion = apiRegion,
+            Environment = environment.EnvironmentName,
+            DeploymentId = deploymentId,
+            Version = version,
+            Nodes = nodes
+        };
+    }
+
     [GraphQLName("userBySessionId")]
     public async Task<UserDto?> GetUserBySessionIdAsync(
         [Service] IUserService userService,

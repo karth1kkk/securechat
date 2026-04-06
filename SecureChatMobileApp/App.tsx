@@ -12,8 +12,8 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { SecurityCenterScreen } from './screens/SecurityCenterScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { PathScreen } from './screens/PathScreen';
+import { SecureChatNetworkScreen } from './screens/SecureChatNetworkScreen';
 import { AppearanceScreen } from './screens/AppearanceScreen';
-import { ProfileEditModal } from './screens/ProfileEditModal';
 import { ConversationsSettingsScreen } from './screens/ConversationsSettingsScreen';
 import { sessionService, SessionRecord } from './services/sessionService';
 import { pinService } from './services/pinService';
@@ -23,6 +23,8 @@ import { REGISTER_ANONYMOUS } from './graphql/mutations';
 import { ApolloError } from '@apollo/client';
 import { ThemeProvider, useTheme } from './theme/ThemeContext';
 import { preferencesService } from './services/preferencesService';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { RootSafeAreaProvider } from './components/RootSafeAreaProvider';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -163,6 +165,11 @@ const SecureChatApp: React.FC = () => {
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
           <Stack.Screen name="Path" component={PathScreen} options={{ title: 'Path' }} />
+          <Stack.Screen
+            name="SecureChatNetwork"
+            component={SecureChatNetworkScreen}
+            options={{ title: 'SecureChat Network' }}
+          />
           <Stack.Screen name="Appearance" component={AppearanceScreen} options={{ title: 'Appearance' }} />
           <Stack.Screen
             name="ConversationsSettings"
@@ -170,13 +177,6 @@ const SecureChatApp: React.FC = () => {
             options={{ title: 'Conversations' }}
           />
           <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
-          <Stack.Group screenOptions={{ presentation: 'modal' }}>
-            <Stack.Screen
-              name="ProfileEditModal"
-              component={ProfileEditModal}
-              options={{ title: 'Edit Profile' }}
-            />
-          </Stack.Group>
         </Stack.Navigator>
       </NavigationContainer>
       <PinLock onUnlock={handleUnlock} onCreate={handleCreate} hasPin={hasPin} visible={locked} />
@@ -186,11 +186,15 @@ const SecureChatApp: React.FC = () => {
 
 export default function App() {
   return (
-    <ApolloProvider client={apolloClient}>
-      <ThemeProvider>
-        <SecureChatApp />
-      </ThemeProvider>
-    </ApolloProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <RootSafeAreaProvider>
+        <ApolloProvider client={apolloClient}>
+          <ThemeProvider>
+            <SecureChatApp />
+          </ThemeProvider>
+        </ApolloProvider>
+      </RootSafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -14,6 +14,7 @@ using Microsoft.IdentityModel.Tokens;
 using SecureChatBackend.Application.Interfaces;
 using SecureChatBackend.Application.Services;
 using SecureChatBackend.Auth;
+using SecureChatBackend.Configuration;
 using SecureChatBackend.GraphQL;
 using SecureChatBackend.Hubs;
 using SecureChatBackend.Infrastructure.Data;
@@ -22,7 +23,11 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseUrls("http://localhost:5002");
+// Local dev default; set ASPNETCORE_URLS (e.g. http://+:8080) in Docker/ECS so Kestrel binds correctly.
+if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+{
+    builder.WebHost.UseUrls("http://localhost:5002");
+}
 
 builder.Configuration.AddEnvironmentVariables();
 
@@ -76,6 +81,7 @@ if (secret.Length < 32)
     secret = Encoding.UTF8.GetBytes(secretValue);
 }
 builder.Services.Configure<JwtSettings>(jwtSection);
+builder.Services.Configure<SecureChatNetworkOptions>(builder.Configuration.GetSection(SecureChatNetworkOptions.SectionName));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -130,6 +136,11 @@ builder.Services.AddRateLimiter(options =>
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
+        if (context.Request.Path.StartsWithSegments("/health"))
+        {
+            return RateLimitPartition.GetNoLimiter("health");
+        }
+
         if (HttpMethods.Options.Equals(context.Request.Method, StringComparison.OrdinalIgnoreCase))
         {
             return RateLimitPartition.GetNoLimiter("cors-preflight");
@@ -213,5 +224,6 @@ app.UseAuthorization();
 
 app.MapGraphQL().RequireCors("default");
 app.MapHub<MessagingHub>("/hubs/messaging");
+app.MapGet("/health", () => Results.Text("ok", "text/plain"));
 
 app.Run();

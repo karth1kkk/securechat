@@ -1,4 +1,4 @@
-import { HubConnection, HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
+import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import { EncryptedMessage } from './encryptionService';
 import { SIGNALR_URL } from '../config';
 
@@ -94,6 +94,14 @@ export class SignalRService {
         signature: pickFirst(dto.signature ?? undefined, dto.Signature ?? undefined)
       });
     });
+  }
+
+  getState(): HubConnectionState | null {
+    return this.connection?.state ?? null;
+  }
+
+  isConnected(): boolean {
+    return this.connection?.state === HubConnectionState.Connected;
   }
 
   async stop() {

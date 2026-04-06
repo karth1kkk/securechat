@@ -1,5 +1,22 @@
 import { gql } from '@apollo/client';
 
+export const SECURE_CHAT_NETWORK_INFO = gql`
+  query SecureChatNetworkInfo {
+    secureChatNetworkInfo {
+      apiRegion
+      environment
+      deploymentId
+      version
+      nodes {
+        role
+        label
+        countryCode
+        region
+      }
+    }
+  }
+`;
+
 export const GET_USER_BY_SESSION_ID = gql`
   query GetUserBySessionId($sessionId: String!) {
     userBySessionId(sessionId: $sessionId) {
