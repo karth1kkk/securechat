@@ -23,10 +23,19 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Local dev default; set ASPNETCORE_URLS (e.g. http://+:8080) in Docker/ECS so Kestrel binds correctly.
+// Local dev default; Docker/Heroku set ASPNETCORE_URLS or PORT. Do not force localhost when PORT is set
+// or Heroku's router will never reach Kestrel (H20 boot timeout).
 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
-    builder.WebHost.UseUrls("http://localhost:5002");
+    var port = Environment.GetEnvironmentVariable("PORT");
+    if (!string.IsNullOrWhiteSpace(port))
+    {
+        builder.WebHost.UseUrls($"http://+:{port}");
+    }
+    else
+    {
+        builder.WebHost.UseUrls("http://localhost:5002");
+    }
 }
 
 builder.Configuration.AddEnvironmentVariables();
@@ -187,10 +196,24 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("default", policy =>
     {
-        policy.WithOrigins(corsOrigins)
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        policy
+            .SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrEmpty(origin)) return false;
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+                if (corsOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)) return true;
+                // Expo / local dev
+                if (uri.Scheme is "http" or "https" &&
+                    (uri.Host == "localhost" || uri.Host == "127.0.0.1"))
+                    return true;
+                // Vercel preview & production (*.vercel.app); add Cors:AllowedOrigins for other web hosts.
+                if (uri.Scheme == "https" && uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                return false;
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -205,18 +228,6 @@ var app = builder.Build();
 
 app.UseRouting();
 app.UseCors("default");
-
-app.Use(async (context, next) =>
-{
-    if (context.Request.Method == HttpMethods.Options && context.Request.Path.StartsWithSegments("/graphql"))
-    {
-        context.Response.StatusCode = StatusCodes.Status204NoContent;
-        await context.Response.CompleteAsync();
-        return;
-    }
-
-    await next();
-});
 
 app.UseRateLimiter();
 
