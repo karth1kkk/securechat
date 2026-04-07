@@ -14,6 +14,8 @@ import { SecurityCenterScreen } from './screens/SecurityCenterScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { PathScreen } from './screens/PathScreen';
 import { SecureChatNetworkScreen } from './screens/SecureChatNetworkScreen';
+import { CallScreen } from './screens/CallScreen';
+import { DonateScreen } from './screens/DonateScreen';
 import { AppearanceScreen } from './screens/AppearanceScreen';
 import { ConversationsSettingsScreen } from './screens/ConversationsSettingsScreen';
 import { sessionService, SessionRecord } from './services/sessionService';
@@ -182,6 +184,8 @@ const SecureChatApp: React.FC = () => {
             }}
           />
           <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Conversation' }} />
+          <Stack.Screen name="Call" component={CallScreen} options={{ title: 'Call' }} />
+          <Stack.Screen name="Donate" component={DonateScreen} options={{ title: 'Donate' }} />
           <Stack.Screen name="NewChat" component={NewChatScreen} options={{ title: 'Start Conversation' }} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />

@@ -11,6 +11,8 @@ import { useTheme } from '../theme/ThemeContext';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ProfileEditSheet } from '../components/ProfileEditSheet';
+import { sentMessagePlaintextService } from '../services/sentMessagePlaintextService';
+import { threadCachePersistence } from '../services/threadCachePersistence';
 
 type MenuItem = {
   label: string;
@@ -74,6 +76,8 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
             await AsyncStorage.clear();
             await preferencesService.setUsername(null);
             await preferencesService.setThemePreference(DEFAULT_THEME);
+            await sentMessagePlaintextService.clear();
+            await threadCachePersistence.clearAll();
             await sessionService.clearSession();
             Alert.alert('All data cleared', 'Re-open the app to reinitialize the session.');
           } catch (error) {
@@ -90,7 +94,7 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
       {
         label: 'Donate',
         icon: 'heart',
-        onPress: () => Alert.alert('Donate', 'Support development by sharing a tip channel soon.')
+        onPress: () => navigation.navigate('Donate')
       },
       {
         label: 'Invite a Friend',

@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient, useQuery } from '@apollo/client';
-import { useIsFocused } from '@react-navigation/native';
-import { SessionBanner } from '../components/SessionBanner';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { ChatBubble } from '../components/ChatBubble';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { encryptionService } from '../services/encryptionService';
@@ -12,7 +12,8 @@ import { GET_MESSAGES, CONVERSATION_BY_ID } from '../graphql/queries';
 import { SEND_MESSAGE } from '../graphql/mutations';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
-import { preferencesService } from '../services/preferencesService';
+import { sentMessagePlaintextService } from '../services/sentMessagePlaintextService';
+import { threadCachePersistence, PersistedThreadMessage } from '../services/threadCachePersistence';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -26,38 +27,103 @@ interface ThreadMessage {
 
 const threadCache = new Map<string, ThreadMessage[]>();
 
-export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
-  const { conversationId } = route.params;
+const mergeById = (server: ThreadMessage[], local: ThreadMessage[]): ThreadMessage[] => {
+  const byId = new Map<string, ThreadMessage>();
+  for (const m of server) {
+    byId.set(m.id, m);
+  }
+  for (const m of local) {
+    if (!byId.has(m.id)) {
+      byId.set(m.id, m);
+    }
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+};
+
+/** Case-insensitive GUID comparison (JWT sub vs GraphQL UUID strings can differ in casing). */
+const normalizeUserId = (id: string | null | undefined) => (id ?? '').trim().toLowerCase();
+
+const sameUserId = (a: string | null | undefined, b: string | null | undefined) => {
+  const na = normalizeUserId(a);
+  const nb = normalizeUserId(b);
+  return na.length > 0 && na === nb;
+};
+
+type ChatScreenContentProps = {
+  conversationId: string;
+  navigation: ChatScreenProps['navigation'];
+};
+
+const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, navigation }) => {
   const { palette } = useTheme();
   const [messages, setMessages] = useState<ThreadMessage[]>(() => threadCache.get(conversationId) ?? []);
   const [input, setInput] = useState('');
   const [expiry, setExpiry] = useState(0);
   const [session, setSession] = useState<SessionRecord | null>(null);
-  const [localUsername, setLocalUsername] = useState<string | null>(null);
   const flatListRef = useRef<FlatList<ThreadMessage>>(null);
   const signalR = useRef(new SignalRService());
   const client = useApolloClient();
-  const isFocused = useIsFocused();
+  const hydratedRef = useRef(false);
 
   const { data: conversationData } = useQuery(CONVERSATION_BY_ID, {
     variables: { conversationId },
-    fetchPolicy: 'network-only'
+    fetchPolicy: 'network-only',
+    errorPolicy: 'all'
   });
 
-  const { data: messagesData, refetch: refetchMessages } = useQuery(GET_MESSAGES, {
+  const {
+    data: messagesData,
+    loading: messagesLoading,
+    refetch: refetchMessages
+  } = useQuery(GET_MESSAGES, {
     variables: { conversationId, limit: 200 },
-    fetchPolicy: 'network-only'
+    fetchPolicy: 'network-only',
+    notifyOnNetworkStatusChange: true,
+    errorPolicy: 'all'
   });
 
-  useEffect(() => {
-    sessionService.ensureSession().then(setSession);
+  const refreshSessionFromStorage = useCallback(async () => {
+    const next = await sessionService.getSession();
+    setSession(next);
+    return next;
   }, []);
 
   useEffect(() => {
-    if (isFocused) {
-      preferencesService.getUsername().then(setLocalUsername);
+    void refreshSessionFromStorage();
+  }, [refreshSessionFromStorage]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshSessionFromStorage().then((s) => {
+        if (s?.jwtToken) {
+          void refetchMessages();
+        }
+      });
+    }, [refreshSessionFromStorage, refetchMessages])
+  );
+
+  useEffect(() => {
+    if (!session?.jwtToken) {
+      return;
     }
-  }, [isFocused]);
+    void refetchMessages();
+  }, [session?.jwtToken, conversationId, refetchMessages]);
+
+  useEffect(() => {
+    if (!hydratedRef.current && !threadCache.get(conversationId)?.length) {
+      threadCachePersistence.get(conversationId).then((stored) => {
+        if (stored?.length) {
+          threadCache.set(conversationId, stored as ThreadMessage[]);
+          setMessages(stored as ThreadMessage[]);
+        }
+        hydratedRef.current = true;
+      });
+    } else {
+      hydratedRef.current = true;
+    }
+  }, [conversationId]);
 
   const decodeJwtSub = useCallback((token: string | undefined): string | null => {
     if (!token) {
@@ -91,34 +157,12 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
     });
   }, []);
 
-  const hasRefetchedOnFocus = useRef(false);
-
-  useEffect(() => {
-    if (!isFocused) {
-      return;
-    }
-    if (!hasRefetchedOnFocus.current) {
-      hasRefetchedOnFocus.current = true;
-      return;
-    }
-    refetchMessages();
-  }, [isFocused, refetchMessages]);
-
-  useEffect(() => {
-    hasRefetchedOnFocus.current = false;
-    const cached = threadCache.get(conversationId);
-    if (
-      cached &&
-      cached.length === messages.length &&
-      cached.every((msg, index) => msg.id === messages[index]?.id)
-    ) {
-      return;
-    }
-    setMessages(cached ?? []);
-  }, [conversationId]);
-
   useEffect(() => {
     threadCache.set(conversationId, messages);
+    const persist = setTimeout(() => {
+      threadCachePersistence.set(conversationId, messages as PersistedThreadMessage[]);
+    }, 400);
+    return () => clearTimeout(persist);
   }, [conversationId, messages]);
 
   useEffect(() => {
@@ -130,7 +174,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
       await signalR.current.start(session.jwtToken);
       await signalR.current.joinConversation(conversationId);
       signalR.current.onEncryptedMessage((payload) => {
-        if (payload.senderId === currentUserId) {
+        if (sameUserId(payload.senderId, currentUserId)) {
           return;
         }
         if (!session?.privateKey) {
@@ -159,36 +203,60 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
   }, [conversationId, currentUserId, session, addMessage]);
 
   useEffect(() => {
-    if (!messagesData?.getMessagesAsync || !session?.privateKey) {
+    const rows = messagesData?.getMessagesAsync;
+    // Do not gate on messagesError: a failed first fetch (e.g. before JWT was in storage) can leave
+    // error set until a later refetch succeeds; we still apply rows whenever the query returns data.
+    if (messagesLoading || !Array.isArray(rows) || !session?.privateKey) {
       return;
     }
 
-    const decrypted = messagesData.getMessagesAsync.map((payload: any) => {
-      let plaintext = '[unable to decrypt]';
-      try {
-        plaintext = encryptionService.decryptMessage(payload, session.privateKey);
-      } catch (error) {
-        console.error('Decrypt failed', error);
+    let cancelled = false;
+
+    (async () => {
+      const decrypted: ThreadMessage[] = [];
+      for (const payload of rows as any[]) {
+        const isOutgoing = sameUserId(payload.senderId, currentUserId);
+        let plaintext = '[unable to decrypt]';
+        if (isOutgoing) {
+          const stored = await sentMessagePlaintextService.get(payload.id);
+          plaintext = stored ?? '[unable to decrypt]';
+        } else {
+          try {
+            plaintext = encryptionService.decryptMessage(payload, session.privateKey!);
+          } catch (error) {
+            console.error('Decrypt failed', error);
+          }
+        }
+
+        decrypted.push({
+          id: payload.id,
+          content: plaintext,
+          isOutgoing,
+          createdAt: payload.createdAt,
+          status: isOutgoing ? 'sent' : undefined
+        });
       }
 
-      return {
-        id: payload.id,
-        content: plaintext,
-        isOutgoing: payload.senderId === currentUserId,
-        createdAt: payload.createdAt,
-        status: payload.senderId === currentUserId ? 'sent' : undefined
-      } as ThreadMessage;
-    });
+      if (cancelled) {
+        return;
+      }
 
-    setMessages(decrypted);
-  }, [messagesData, session?.privateKey, currentUserId]);
+      // Merge full previous state so we never drop received/cached rows when the server returns [] or
+      // a transient partial result; server rows win by id. Only the backend expiry filter removes messages.
+      setMessages((prev) => mergeById(decrypted, prev));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messagesData, messagesLoading, session?.privateKey, currentUserId]);
 
   useEffect(() => {
-    if (!conversationData?.conversationById) {
+    if (!conversationData?.conversationById || !normalizeUserId(currentUserId)) {
       return;
     }
     const partner = conversationData.conversationById.participants.find(
-      (participant: any) => participant.userId !== currentUserId
+      (participant: any) => !sameUserId(participant.userId, currentUserId)
     );
     const title = partner ? partner.username ?? formatSession(partner.sessionId) : 'Conversation';
     navigation.setOptions({ title });
@@ -199,13 +267,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
       flatListRef.current?.scrollToEnd({ animated: true });
     }
   }, [messages.length]);
-
-  const loadPartnerName = useMemo(() => {
-    const partner = conversationData?.conversationById?.participants.find(
-      (participant: any) => participant.userId !== currentUserId
-    );
-    return partner ? partner.username ?? formatSession(partner.sessionId) : 'Conversation';
-  }, [conversationData, currentUserId]);
 
   const handleSend = async () => {
     if (!input.trim()) {
@@ -218,21 +279,27 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
     }
 
     const recipient = conversationData?.conversationById?.participants.find(
-      (p: any) => p.userId !== currentUserId
+      (p: any) => !sameUserId(p.userId, currentUserId)
     );
+
+    if (!normalizeUserId(currentUserId)) {
+      console.error('Missing current user id for send.');
+      return;
+    }
 
     if (!recipient?.publicKey) {
       console.error('Missing recipient public key for conversation.');
       return;
     }
 
-    const encrypted = encryptionService.encryptMessage(input.trim(), recipient.publicKey, current.privateKey);
+    const plain = input.trim();
+    const encrypted = encryptionService.encryptMessage(plain, recipient.publicKey, current.privateKey);
     const optimisticId = `${Date.now()}-${Math.random()}`;
     setMessages((prev) => [
       ...prev,
       {
         id: optimisticId,
-        content: input.trim(),
+        content: plain,
         isOutgoing: true,
         createdAt: new Date().toISOString(),
         status: 'sending'
@@ -257,11 +324,17 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
       });
 
       const serverMessage = data?.sendMessage;
-      if (serverMessage) {
+      if (serverMessage?.id) {
+        await sentMessagePlaintextService.set(serverMessage.id, plain);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === optimisticId
-              ? { ...msg, id: serverMessage.id ?? msg.id, createdAt: serverMessage.createdAt, status: 'sent' }
+              ? {
+                  ...msg,
+                  id: serverMessage.id,
+                  createdAt: serverMessage.createdAt ?? msg.createdAt,
+                  status: 'sent'
+                }
               : msg
           )
         );
@@ -330,5 +403,41 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
         </Pressable>
       </View>
     </View>
+  );
+};
+
+export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
+  const { conversationId } = route.params;
+  const { palette } = useTheme();
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View className="flex-row items-center pr-1">
+          <Pressable
+            accessibilityLabel="Voice call"
+            className="p-2"
+            onPress={() => navigation.navigate('Call', { conversationId, media: 'audio' })}
+          >
+            <Ionicons name="call" size={22} color={palette.text} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Video call"
+            className="p-2"
+            onPress={() => navigation.navigate('Call', { conversationId, media: 'video' })}
+          >
+            <Ionicons name="videocam" size={22} color={palette.text} />
+          </Pressable>
+        </View>
+      )
+    });
+  }, [conversationId, navigation, palette.text]);
+
+  return (
+    <ChatScreenContent
+      key={conversationId}
+      conversationId={conversationId}
+      navigation={navigation}
+    />
   );
 };

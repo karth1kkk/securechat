@@ -6,10 +6,13 @@ interface KeyPair {
 }
 
 interface EncryptedMessage {
-  ciphertext: string;
-  encryptedKey: string;
-  nonce: string;
-  tag: string;
+  /** Wire format from encryptMessage / SignalR */
+  ciphertext?: string;
+  /** GraphQL field name for the same value (GET_MESSAGES) */
+  encryptedContent?: string;
+  encryptedKey?: string;
+  nonce?: string;
+  tag?: string;
   signature?: string;
 }
 
@@ -97,10 +100,25 @@ export const encryptionService = {
   },
 
   decryptMessage(encrypted: EncryptedMessage, privateKey: string): string {
-    const aesKey = this.decryptAesKey(privateKey, encrypted.encryptedKey);
-    const ciphertext = decodeBase64(encrypted.ciphertext);
-    const iv = decodeBase64(encrypted.nonce);
-    const tag = decodeBase64(encrypted.tag);
+    const enc = encrypted as EncryptedMessage & Record<string, string | undefined>;
+    const ciphertextB64 = enc.ciphertext ?? enc.encryptedContent ?? enc.EncryptedContent;
+    const encryptedKeyB64 = enc.encryptedKey ?? enc.EncryptedKey;
+    const nonceB64 = enc.nonce ?? enc.Nonce;
+    const tagB64 = enc.tag ?? enc.Tag;
+
+    if (
+      typeof ciphertextB64 !== 'string' ||
+      typeof encryptedKeyB64 !== 'string' ||
+      typeof nonceB64 !== 'string' ||
+      typeof tagB64 !== 'string'
+    ) {
+      throw new Error('Missing ciphertext, encryptedKey, nonce, or tag for decryption.');
+    }
+
+    const aesKey = this.decryptAesKey(privateKey, encryptedKeyB64);
+    const ciphertext = decodeBase64(ciphertextB64);
+    const iv = decodeBase64(nonceB64);
+    const tag = decodeBase64(tagB64);
 
     const decipher = forge.cipher.createDecipher('AES-GCM', aesKey);
     decipher.start({ iv, tagLength: 128, tag: forge.util.createBuffer(tag) });

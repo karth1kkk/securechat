@@ -35,9 +35,14 @@ public sealed class MessageRepository : IMessageRepository
             query = query.Where(m => m.CreatedAt >= since.Value);
         }
 
-        return await query
-            .OrderBy(m => m.CreatedAt)
+        // Return the newest `limit` messages (chronological order for the client).
+        var newestFirst = await query
+            .OrderByDescending(m => m.CreatedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);
+
+        return newestFirst
+            .OrderBy(m => m.CreatedAt)
+            .ToList();
     }
 }

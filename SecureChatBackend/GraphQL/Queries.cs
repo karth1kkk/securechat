@@ -70,6 +70,9 @@ public sealed class Query
         return new UserDto(user.Id, user.SessionId, user.PublicKey, user.CreatedAt, user.Username);
     }
 
+    // Explicit name: Hot Chocolate strips "Async" from method names by default, which would expose
+    // "getMessages" while the mobile client queries "getMessagesAsync" (400 Bad Request otherwise).
+    [GraphQLName("getMessagesAsync")]
     [Authorize]
     public Task<IReadOnlyList<MessageDto>> GetMessagesAsync(
         [Service] IMessageService messageService,

@@ -97,7 +97,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
 
-                if (!string.IsNullOrWhiteSpace(accessToken) && path.StartsWithSegments("/hubs/messaging"))
+                if (!string.IsNullOrWhiteSpace(accessToken) &&
+                    (path.StartsWithSegments("/hubs/messaging") || path.StartsWithSegments("/hubs/call")))
                 {
                     context.Token = accessToken;
                 }
@@ -224,6 +225,7 @@ app.UseAuthorization();
 
 app.MapGraphQL().RequireCors("default");
 app.MapHub<MessagingHub>("/hubs/messaging");
+app.MapHub<CallHub>("/hubs/call");
 app.MapGet("/health", () => Results.Text("ok", "text/plain"));
 
 app.Run();
