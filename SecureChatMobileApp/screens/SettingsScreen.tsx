@@ -269,6 +269,7 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
           </Text>
         ) : null}
       </View>
+
       <View className="mb-[30px]">
         {menuSections.map((section, index) => (
           <View key={`section-${index}`} className="mb-4 rounded-[18px] bg-transparent p-3">

@@ -5,7 +5,7 @@ import { useApolloClient, useQuery } from '@apollo/client';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatBubble } from '../components/ChatBubble';
-import { TicTacToeChatModal, bubbleTextForMessage } from '../components/TicTacToeChatModal';
+import { ChatGameModal, bubbleTextForMessage } from '../components/ChatGameModal';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { encryptionService } from '../services/encryptionService';
 import { SignalRService } from '../services/signalrService';
@@ -16,6 +16,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { sentMessagePlaintextService } from '../services/sentMessagePlaintextService';
 import { threadCachePersistence, PersistedThreadMessage } from '../services/threadCachePersistence';
 import { ThreadMessage } from '../types/threadMessage';
+import { recordFinishedGameStats } from '../services/gameStatsRecorder';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -322,6 +323,10 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     }
   }, [messages.length]);
 
+  useEffect(() => {
+    recordFinishedGameStats(messages, currentUserId ?? undefined);
+  }, [messages, currentUserId]);
+
   const sendPlaintextMessage = useCallback(
     async (plain: string) => {
       const trimmed = plain.trim();
@@ -416,7 +421,7 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
 
   return (
     <View className="flex-1 p-4" style={{ backgroundColor: palette.background }}>
-      <TicTacToeChatModal
+      <ChatGameModal
         visible={gameModalOpen}
         onClose={() => setGameModalOpen(false)}
         conversationId={conversationId}
