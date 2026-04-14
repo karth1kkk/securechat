@@ -16,6 +16,8 @@ import { preferencesService } from '../services/preferencesService';
 import { Ionicons } from '@expo/vector-icons';
 import { ConversationParticipant, ConversationRecord } from '../types/conversation';
 import { cn } from '../lib/cn';
+import { decodeJwtSub } from '../lib/jwtDecode';
+import { normalizeUserId, sameUserId } from '../lib/userIds';
 
 type ChatListScreenProps = NativeStackScreenProps<RootStackParamList, 'ChatList'>;
 
@@ -56,18 +58,27 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
   const formatSession = (value?: string | null) =>
     value ? `${value.slice(0, 6)}…${value.slice(-6)}` : 'Unknown';
 
+  const currentUserId = useMemo(
+    () => session?.userId ?? decodeJwtSub(session?.jwtToken),
+    [session]
+  );
+
   const getOtherParticipant = (conversation: ConversationRecord) => {
-    if (!session) {
+    const me = normalizeUserId(currentUserId);
+    if (!me) {
       return conversation.participants[0];
     }
-    return conversation.participants.find((p) => p.userId !== session.userId) ?? conversation.participants[0];
+    return (
+      conversation.participants.find((p) => !sameUserId(p.userId, currentUserId)) ??
+      conversation.participants[0]
+    );
   };
 
   const getDisplayName = (participant?: ConversationParticipant | null) => {
     if (!participant) {
       return 'Unknown';
     }
-    if (participant.userId === session?.userId && localUsername) {
+    if (sameUserId(participant.userId, currentUserId) && localUsername) {
       return localUsername;
     }
     return participant.username ?? formatSession(participant?.sessionId);
@@ -86,7 +97,7 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
       const target = `${displayName ?? ''} ${item.id ?? ''}`.toLowerCase();
       return target.includes(normalized);
     });
-  }, [conversations, searchQuery, session, localUsername]);
+  }, [conversations, searchQuery, currentUserId, localUsername]);
 
   const handleAccept = async (conversationId: string) => {
     try {

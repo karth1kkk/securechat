@@ -1,15 +1,26 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View
+} from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient, useQuery } from '@apollo/client';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { EncodingType, getInfoAsync, readAsStringAsync } from 'expo-file-system/legacy';
+import * as ImagePicker from 'expo-image-picker';
 import { ChatBubble } from '../components/ChatBubble';
 import { ChatGameModal, bubbleTextForMessage } from '../components/ChatGameModal';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { encryptionService } from '../services/encryptionService';
 import { SignalRService } from '../services/signalrService';
-import { GET_MESSAGES, CONVERSATION_BY_ID } from '../graphql/queries';
+import { GET_MESSAGES, CONVERSATION_BY_ID, GET_USER_BY_SESSION_ID } from '../graphql/queries';
 import { SEND_MESSAGE } from '../graphql/mutations';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
@@ -17,10 +28,40 @@ import { sentMessagePlaintextService } from '../services/sentMessagePlaintextSer
 import { threadCachePersistence, PersistedThreadMessage } from '../services/threadCachePersistence';
 import { ThreadMessage } from '../types/threadMessage';
 import { recordFinishedGameStats } from '../services/gameStatsRecorder';
+import { serializeRichMessage } from '../lib/chatRichMessage';
+import { decodeJwtSub } from '../lib/jwtDecode';
+import { normalizeUserId, sameUserId } from '../lib/userIds';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 const threadCache = new Map<string, ThreadMessage[]>();
+
+const MAX_IMAGE_BYTES = 2.5 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 8 * 1024 * 1024;
+
+function approxBytesFromBase64(b64: string): number {
+  return Math.floor((b64.length * 3) / 4);
+}
+
+function isLikelySizeOrOOMError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const m = msg.toLowerCase();
+  return (
+    m.includes('memory') ||
+    m.includes('too large') ||
+    m.includes('file is too big') ||
+    m.includes('out of memory') ||
+    m.includes('space') ||
+    m.includes('allocat') ||
+    m.includes('enomem') ||
+    m.includes('entity too large')
+  );
+}
+
+const STICKER_EMOJIS = [
+  '👍', '❤️', '😂', '🎉', '🔥', '😍', '🙏', '💯', '✨', '😊', '😢', '🤔', '👏', '🎂', '🎈', '🥳',
+  '😎', '🤝', '💪', '🙌', '💔', '😴', '👋', '🎁', '🤣', '😭', '👀', '💀', '🫶', '🙈'
+];
 
 const mergeById = (server: ThreadMessage[], local: ThreadMessage[]): ThreadMessage[] => {
   const byId = new Map<string, ThreadMessage>();
@@ -37,15 +78,6 @@ const mergeById = (server: ThreadMessage[], local: ThreadMessage[]): ThreadMessa
   );
 };
 
-/** Case-insensitive GUID comparison (JWT sub vs GraphQL UUID strings can differ in casing). */
-const normalizeUserId = (id: string | null | undefined) => (id ?? '').trim().toLowerCase();
-
-const sameUserId = (a: string | null | undefined, b: string | null | undefined) => {
-  const na = normalizeUserId(a);
-  const nb = normalizeUserId(b);
-  return na.length > 0 && na === nb;
-};
-
 type ChatScreenContentProps = {
   conversationId: string;
   navigation: ChatScreenProps['navigation'];
@@ -58,6 +90,9 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
   const [expiry, setExpiry] = useState(0);
   const [session, setSession] = useState<SessionRecord | null>(null);
   const [gameModalOpen, setGameModalOpen] = useState(false);
+  const [stickerModalOpen, setStickerModalOpen] = useState(false);
+  const [gifModalOpen, setGifModalOpen] = useState(false);
+  const [gifUrlInput, setGifUrlInput] = useState('');
   const flatListRef = useRef<FlatList<ThreadMessage>>(null);
   const signalR = useRef(new SignalRService());
   const client = useApolloClient();
@@ -121,28 +156,36 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     }
   }, [conversationId]);
 
-  const decodeJwtSub = useCallback((token: string | undefined): string | null => {
-    if (!token) {
-      return null;
-    }
-    try {
-      const payload = token.split('.')[1];
-      const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = `${normalized}${'='.repeat((4 - (normalized.length % 4)) % 4)}`;
-      const json = atob(padded);
-      const parsed = JSON.parse(json);
-      return parsed?.sub ?? null;
-    } catch (error) {
-      console.error('Unable to decode jwt sub', error);
-      return null;
-    }
-  }, []);
-
   const currentUserId = useMemo(() => {
     return session?.userId ?? decodeJwtSub(session?.jwtToken);
-  }, [session, decodeJwtSub]);
+  }, [session]);
 
   const formatSession = (value?: string) => (value ? `${value.slice(0, 6)}…${value.slice(-6)}` : 'Unknown');
+
+  const partnerParticipant = useMemo(() => {
+    const parts = conversationData?.conversationById?.participants;
+    if (!parts?.length || !normalizeUserId(currentUserId)) {
+      return null;
+    }
+    return parts.find((p: { userId: string }) => !sameUserId(p.userId, currentUserId)) ?? null;
+  }, [conversationData, currentUserId]);
+
+  const { data: peerUserLookup } = useQuery(GET_USER_BY_SESSION_ID, {
+    variables: { sessionId: partnerParticipant?.sessionId ?? '' },
+    skip: !partnerParticipant?.sessionId || !!partnerParticipant?.username,
+    fetchPolicy: 'network-only'
+  });
+
+  const resolvedPeerTitle = useMemo(() => {
+    if (!partnerParticipant) {
+      return 'Conversation';
+    }
+    return (
+      partnerParticipant.username ??
+      peerUserLookup?.userBySessionId?.username ??
+      (partnerParticipant.sessionId ? formatSession(partnerParticipant.sessionId) : 'Conversation')
+    );
+  }, [partnerParticipant, peerUserLookup]);
 
   const addMessage = useCallback((message: ThreadMessage) => {
     setMessages((previous) => {
@@ -277,15 +320,11 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
   }, [messagesData, messagesLoading, session?.privateKey, currentUserId]);
 
   useEffect(() => {
-    if (!conversationData?.conversationById || !normalizeUserId(currentUserId)) {
+    if (!normalizeUserId(currentUserId)) {
       return;
     }
-    const partner = conversationData.conversationById.participants.find(
-      (participant: any) => !sameUserId(participant.userId, currentUserId)
-    );
-    const title = partner ? partner.username ?? formatSession(partner.sessionId) : 'Conversation';
-    navigation.setOptions({ title });
-  }, [conversationData, currentUserId, navigation]);
+    navigation.setOptions({ title: resolvedPeerTitle });
+  }, [currentUserId, navigation, resolvedPeerTitle]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -301,21 +340,37 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
           <Pressable
             accessibilityLabel="Voice call"
             className="p-2"
-            onPress={() => navigation.navigate('Call', { conversationId, media: 'audio', callRole: 'caller' })}
+            onPress={() =>
+              navigation.navigate('Call', {
+                conversationId,
+                media: 'audio',
+                callRole: 'caller',
+                peerDisplayName:
+                  resolvedPeerTitle !== 'Conversation' ? resolvedPeerTitle : undefined
+              })
+            }
           >
             <Ionicons name="call" size={22} color={palette.text} />
           </Pressable>
           <Pressable
             accessibilityLabel="Video call"
             className="p-2"
-            onPress={() => navigation.navigate('Call', { conversationId, media: 'video', callRole: 'caller' })}
+            onPress={() =>
+              navigation.navigate('Call', {
+                conversationId,
+                media: 'video',
+                callRole: 'caller',
+                peerDisplayName:
+                  resolvedPeerTitle !== 'Conversation' ? resolvedPeerTitle : undefined
+              })
+            }
           >
             <Ionicons name="videocam" size={22} color={palette.text} />
           </Pressable>
         </View>
       )
     });
-  }, [conversationId, navigation, palette.text]);
+  }, [conversationId, navigation, palette.text, resolvedPeerTitle]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -410,6 +465,160 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     [client, conversationData?.conversationById?.participants, conversationId, currentUserId, expiry]
   );
 
+  const pickAndSendImage = useCallback(async () => {
+    const tooLargeImage = () =>
+      Alert.alert(
+        'File too large',
+        'File size too big to send. Images must be about 2.5 MB or smaller.'
+      );
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission', 'Photo library access is needed to send images.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.65,
+        base64: true
+      });
+      if (result.canceled || !result.assets?.[0]) {
+        return;
+      }
+      const asset = result.assets[0];
+
+      if (asset.fileSize != null && asset.fileSize > MAX_IMAGE_BYTES) {
+        tooLargeImage();
+        return;
+      }
+
+      let b64 = asset.base64;
+      if (b64) {
+        if (approxBytesFromBase64(b64) > MAX_IMAGE_BYTES) {
+          tooLargeImage();
+          return;
+        }
+      } else if (asset.uri) {
+        const info = await getInfoAsync(asset.uri);
+        if (
+          info.exists &&
+          'size' in info &&
+          typeof info.size === 'number' &&
+          info.size > MAX_IMAGE_BYTES
+        ) {
+          tooLargeImage();
+          return;
+        }
+        try {
+          b64 = await readAsStringAsync(asset.uri, { encoding: EncodingType.Base64 });
+        } catch (readErr) {
+          if (isLikelySizeOrOOMError(readErr)) {
+            tooLargeImage();
+            return;
+          }
+          throw readErr;
+        }
+      }
+      if (!b64) {
+        Alert.alert('Error', 'Could not read the image.');
+        return;
+      }
+      if (approxBytesFromBase64(b64) > MAX_IMAGE_BYTES) {
+        tooLargeImage();
+        return;
+      }
+      const mime = asset.mimeType ?? 'image/jpeg';
+      await sendPlaintextMessage(serializeRichMessage({ type: 'image', mime, base64: b64 }));
+    } catch (e) {
+      console.error('pickAndSendImage', e);
+      if (isLikelySizeOrOOMError(e)) {
+        tooLargeImage();
+        return;
+      }
+      Alert.alert('Error', 'Could not send the image.');
+    }
+  }, [sendPlaintextMessage]);
+
+  const pickAndSendVideo = useCallback(async () => {
+    const tooLargeVideo = () =>
+      Alert.alert(
+        'File too large',
+        'File size too big to send. Videos must be about 8 MB or smaller.'
+      );
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission', 'Photo library access is needed to send video.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        videoMaxDuration: 120,
+        quality: 0.6
+      });
+      if (result.canceled || !result.assets?.[0]) {
+        return;
+      }
+      const asset = result.assets[0];
+      if (!asset.uri) {
+        return;
+      }
+
+      if (asset.fileSize != null && asset.fileSize > MAX_VIDEO_BYTES) {
+        tooLargeVideo();
+        return;
+      }
+
+      const info = await getInfoAsync(asset.uri);
+      if (
+        info.exists &&
+        'size' in info &&
+        typeof info.size === 'number' &&
+        info.size > MAX_VIDEO_BYTES
+      ) {
+        tooLargeVideo();
+        return;
+      }
+
+      let b64: string;
+      try {
+        b64 = await readAsStringAsync(asset.uri, { encoding: EncodingType.Base64 });
+      } catch (readErr) {
+        if (isLikelySizeOrOOMError(readErr)) {
+          tooLargeVideo();
+          return;
+        }
+        throw readErr;
+      }
+
+      if (approxBytesFromBase64(b64) > MAX_VIDEO_BYTES) {
+        tooLargeVideo();
+        return;
+      }
+      const mime = asset.mimeType ?? 'video/mp4';
+      await sendPlaintextMessage(serializeRichMessage({ type: 'video', mime, base64: b64 }));
+    } catch (e) {
+      console.error('pickAndSendVideo', e);
+      if (isLikelySizeOrOOMError(e)) {
+        tooLargeVideo();
+        return;
+      }
+      Alert.alert('Error', 'Could not send the video (try a shorter clip under 8 MB).');
+    }
+  }, [sendPlaintextMessage]);
+
+  const sendGifFromModal = useCallback(async () => {
+    const u = gifUrlInput.trim();
+    if (!/^https?:\/\//i.test(u)) {
+      Alert.alert('Invalid URL', 'Paste a GIF link starting with http:// or https://');
+      return;
+    }
+    setGifUrlInput('');
+    setGifModalOpen(false);
+    await sendPlaintextMessage(serializeRichMessage({ type: 'gif', url: u }));
+  }, [gifUrlInput, sendPlaintextMessage]);
+
   const handleSend = async () => {
     if (!input.trim()) {
       return;
@@ -436,6 +645,7 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
         renderItem={({ item }) => (
           <ChatBubble
             text={bubbleTextForMessage(item)}
+            rawContent={item.content}
             isOutgoing={item.isOutgoing}
             timestamp={new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             status={item.status}
@@ -465,6 +675,42 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
           ))}
         </View>
       </View>
+      <View className="mt-2 flex-row flex-wrap items-center gap-1">
+        <Pressable
+          accessibilityLabel="Stickers"
+          className="rounded-xl border p-2.5"
+          style={{ borderColor: palette.border }}
+          onPress={() => setStickerModalOpen(true)}
+        >
+          <Ionicons name="happy-outline" size={22} color={palette.action} />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Photo"
+          className="rounded-xl border p-2.5"
+          style={{ borderColor: palette.border }}
+          onPress={() => void pickAndSendImage()}
+        >
+          <Ionicons name="image-outline" size={22} color={palette.action} />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Video"
+          className="rounded-xl border p-2.5"
+          style={{ borderColor: palette.border }}
+          onPress={() => void pickAndSendVideo()}
+        >
+          <Ionicons name="videocam-outline" size={22} color={palette.action} />
+        </Pressable>
+        <Pressable
+          accessibilityLabel="GIF link"
+          className="rounded-xl border px-3 py-2.5"
+          style={{ borderColor: palette.border }}
+          onPress={() => setGifModalOpen(true)}
+        >
+          <Text className="text-xs font-semibold" style={{ color: palette.action }}>
+            GIF
+          </Text>
+        </Pressable>
+      </View>
       <View className="mt-3 flex-row items-center">
         <TextInput
           placeholder="Type a private message"
@@ -482,6 +728,74 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
           <Text className="font-semibold text-white">Send</Text>
         </Pressable>
       </View>
+
+      <Modal visible={stickerModalOpen} transparent animationType="fade" onRequestClose={() => setStickerModalOpen(false)}>
+        <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setStickerModalOpen(false)}>
+          <Pressable
+            className="rounded-t-3xl p-4"
+            style={{ backgroundColor: palette.background }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text className="mb-3 text-base font-semibold" style={{ color: palette.text }}>
+              Stickers
+            </Text>
+            <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', paddingBottom: 8 }}>
+              {STICKER_EMOJIS.map((emoji, idx) => (
+                <Pressable
+                  key={`sticker-${idx}-${emoji}`}
+                  className="m-1 h-12 w-12 items-center justify-center rounded-xl"
+                  style={{ backgroundColor: palette.card }}
+                  onPress={() => {
+                    setStickerModalOpen(false);
+                    void sendPlaintextMessage(serializeRichMessage({ type: 'sticker', emoji }));
+                  }}
+                >
+                  <Text style={{ fontSize: 28 }}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={gifModalOpen} transparent animationType="fade" onRequestClose={() => setGifModalOpen(false)}>
+        <Pressable className="flex-1 justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <Pressable
+            className="rounded-2xl border p-4"
+            style={{ backgroundColor: palette.background, borderColor: palette.border }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text className="mb-2 text-base font-semibold" style={{ color: palette.text }}>
+              Send a GIF
+            </Text>
+            <Text className="mb-2 text-xs" style={{ color: palette.muted }}>
+              Paste a direct link to a GIF image (e.g. from Giphy → Copy image address).
+            </Text>
+            <TextInput
+              placeholder="https://..."
+              placeholderTextColor={palette.placeholder}
+              className="mb-3 rounded-xl border p-3"
+              style={{ borderColor: palette.border, color: palette.text }}
+              value={gifUrlInput}
+              onChangeText={setGifUrlInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <View className="flex-row justify-end gap-2">
+              <Pressable className="rounded-xl px-4 py-2" onPress={() => setGifModalOpen(false)}>
+                <Text style={{ color: palette.muted }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                className="rounded-xl px-4 py-2"
+                style={{ backgroundColor: palette.action }}
+                onPress={() => void sendGifFromModal()}
+              >
+                <Text className="font-semibold text-white">Send</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };

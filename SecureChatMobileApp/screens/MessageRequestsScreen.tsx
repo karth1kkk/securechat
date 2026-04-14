@@ -9,6 +9,8 @@ import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
 import { preferencesService } from '../services/preferencesService';
 import { ConversationParticipant, ConversationRecord } from '../types/conversation';
+import { decodeJwtSub } from '../lib/jwtDecode';
+import { normalizeUserId, sameUserId } from '../lib/userIds';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MessageRequests'>;
 
@@ -33,18 +35,27 @@ export const MessageRequestsScreen: React.FC<Props> = ({ navigation }) => {
   const formatSession = (value?: string | null) =>
     value ? `${value.slice(0, 6)}…${value.slice(-6)}` : 'Unknown';
 
+  const currentUserId = useMemo(
+    () => session?.userId ?? decodeJwtSub(session?.jwtToken),
+    [session]
+  );
+
   const getOtherParticipant = (conversation: ConversationRecord) => {
-    if (!session) {
+    const me = normalizeUserId(currentUserId);
+    if (!me) {
       return conversation.participants[0];
     }
-    return conversation.participants.find((p) => p.userId !== session.userId) ?? conversation.participants[0];
+    return (
+      conversation.participants.find((p) => !sameUserId(p.userId, currentUserId)) ??
+      conversation.participants[0]
+    );
   };
 
   const getDisplayName = (participant?: ConversationParticipant | null) => {
     if (!participant) {
       return 'Unknown';
     }
-    if (participant.userId === session?.userId && localUsername) {
+    if (sameUserId(participant.userId, currentUserId) && localUsername) {
       return localUsername;
     }
     return participant.username ?? formatSession(participant?.sessionId);

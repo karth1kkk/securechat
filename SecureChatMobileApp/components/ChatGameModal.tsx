@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { previewRichMessage } from '../lib/chatRichMessage';
 import { ChatGameWire, GameKind, encodeChatGamePayload, parseChatGamePayload, summarizeChatGameMessage } from '../lib/chatGameWire';
 import { sameUserId } from '../lib/userIds';
 import { replayTicTacToe } from '../lib/games/ticTacToeReplay';
@@ -478,13 +479,18 @@ function TodPanel({
 }
 
 export function bubbleTextForMessage(item: ThreadMessage): string {
-  const s = summarizeChatGameMessage(item.content, item.isOutgoing);
+  const body = typeof item.content === 'string' ? item.content.replace(/^\uFEFF/, '').trimStart() : '';
+  const s = summarizeChatGameMessage(body, item.isOutgoing);
   if (s) {
     return s;
   }
-  const g = parseChatGamePayload(item.content);
+  const g = parseChatGamePayload(body);
   if (g) {
     return item.isOutgoing ? '🎮 Game message sent' : '🎮 Game message';
   }
-  return item.content;
+  const rich = previewRichMessage(body);
+  if (rich) {
+    return rich;
+  }
+  return body || item.content;
 }

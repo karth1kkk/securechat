@@ -1,15 +1,28 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Platform,
+  Pressable,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import { Camera } from 'expo-camera';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@apollo/client';
 import { createElement } from 'react';
 import { RootStackParamList } from '../navigation/types';
-import { sessionService } from '../services/sessionService';
+import { CONVERSATION_BY_ID, GET_USER_BY_SESSION_ID } from '../graphql/queries';
+import { decodeJwtSub } from '../lib/jwtDecode';
+import { normalizeUserId, sameUserId } from '../lib/userIds';
+import { sessionService, SessionRecord } from '../services/sessionService';
 import { getCallSignalService } from '../services/callSignalRService';
-import { useTheme } from '../theme/ThemeContext';
 import { buildRtcConfiguration } from '../config';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Call'>;
@@ -48,14 +61,117 @@ const loadWebRtc = (): WrtcModule => {
   }
 };
 
+/** WhatsApp-style voice call screen (dark teal) */
+const WA_CALL_BG = '#0b141a';
+const WA_AVATAR_INNER = '#2a3942';
+const WA_SUBTEXT = 'rgba(233,237,239,0.65)';
+const WA_END_RED = '#ea0038';
+const WA_VIDEO_SCRIM_TOP = 'rgba(0,0,0,0.42)';
+const WA_VIDEO_SCRIM_BOTTOM = 'rgba(0,0,0,0.55)';
+
+function formatSessionShort(value?: string | null) {
+  return value ? `${value.slice(0, 6)}…${value.slice(-6)}` : '';
+}
+
+/** First letter for avatar when we have a display name. */
+function initialFromDisplayName(name: string | null | undefined): string {
+  const t = (name ?? '').trim();
+  if (!t) {
+    return '?';
+  }
+  const ch = [...t][0] ?? '?';
+  return ch.toUpperCase();
+}
+
+function fallbackInitialFromConversationId(id: string): string {
+  const c = id.replace(/-/g, '').charAt(0);
+  return /[a-f0-9]/i.test(c) ? c.toUpperCase() : '?';
+}
+
+function formatCallDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { conversationId, media, callRole = 'caller' } = route.params;
-  const { palette } = useTheme();
+  const {
+    conversationId,
+    media,
+    callRole = 'caller',
+    peerDisplayName: paramPeerName,
+    peerAvatarUri
+  } = route.params;
+  const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<'ringing' | 'connecting' | 'active' | 'ended' | 'error'>(
     callRole === 'caller' ? 'ringing' : 'connecting'
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [remoteStreamUrl, setRemoteStreamUrl] = useState<string | null>(null);
+  const [localStreamUrl, setLocalStreamUrl] = useState<string | null>(null);
+  const [callStartMs, setCallStartMs] = useState<number | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [micMuted, setMicMuted] = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(true);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [session, setSession] = useState<SessionRecord | null>(null);
+
+  useEffect(() => {
+    void sessionService.getSession().then(setSession);
+  }, []);
+
+  const currentUserId = useMemo(
+    () => session?.userId ?? decodeJwtSub(session?.jwtToken),
+    [session]
+  );
+
+  const hasParamPeerName =
+    typeof paramPeerName === 'string' && paramPeerName.trim().length > 0;
+
+  const { data: convData } = useQuery(CONVERSATION_BY_ID, {
+    variables: { conversationId },
+    skip: hasParamPeerName,
+    fetchPolicy: 'cache-first'
+  });
+
+  const partner = useMemo(() => {
+    const parts = convData?.conversationById?.participants;
+    if (!parts?.length || !normalizeUserId(currentUserId)) {
+      return null;
+    }
+    return parts.find((p: { userId: string }) => !sameUserId(p.userId, currentUserId)) ?? null;
+  }, [convData, currentUserId]);
+
+  const { data: peerUserLookup } = useQuery(GET_USER_BY_SESSION_ID, {
+    variables: { sessionId: partner?.sessionId ?? '' },
+    skip: hasParamPeerName || !partner?.sessionId || !!partner?.username,
+    fetchPolicy: 'network-only'
+  });
+
+  const resolvedPeerName = useMemo(() => {
+    if (hasParamPeerName) {
+      return paramPeerName!.trim();
+    }
+    if (!partner) {
+      return null;
+    }
+    return (
+      partner.username ??
+      peerUserLookup?.userBySessionId?.username ??
+      (partner.sessionId ? formatSessionShort(partner.sessionId) : null)
+    );
+  }, [hasParamPeerName, paramPeerName, partner, peerUserLookup]);
+
+  const avatarLetter = useMemo(() => {
+    if (resolvedPeerName?.trim()) {
+      return initialFromDisplayName(resolvedPeerName);
+    }
+    return fallbackInitialFromConversationId(conversationId);
+  }, [conversationId, resolvedPeerName]);
 
   const signalR = getCallSignalService();
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -73,6 +189,17 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
     pcRef.current?.close();
     pcRef.current = null;
     setRemoteStreamUrl(null);
+    setLocalStreamUrl(null);
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const loc = document.getElementById('local-video') as HTMLVideoElement | null;
+      const rem = document.getElementById('remote-video') as HTMLVideoElement | null;
+      if (loc) {
+        loc.srcObject = null;
+      }
+      if (rem) {
+        rem.srcObject = null;
+      }
+    }
   }, []);
 
   const hangUp = useCallback(async () => {
@@ -87,6 +214,44 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
     setStatus('ended');
     navigation.goBack();
   }, [cleanupMedia, conversationId, navigation]);
+
+  const toggleMic = useCallback(() => {
+    setMicMuted((prev) => {
+      const next = !prev;
+      localStreamRef.current?.getAudioTracks().forEach((t) => {
+        t.enabled = !next;
+      });
+      return next;
+    });
+  }, []);
+
+  const toggleSpeakerRoute = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      return;
+    }
+    const next = !speakerOn;
+    setSpeakerOn(next);
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: !next
+    });
+  }, [speakerOn]);
+
+  const toggleCamera = useCallback(() => {
+    if (Platform.OS === 'web') {
+      return;
+    }
+    setCameraOff((prev) => {
+      const next = !prev;
+      localStreamRef.current?.getVideoTracks().forEach((t) => {
+        t.enabled = !next;
+      });
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     exitedCleanlyRef.current = false;
@@ -131,6 +296,12 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const ensureLocalStream = async (wrtc: WrtcModule) => {
       if (localStreamRef.current) {
+        if (Platform.OS !== 'web' && media === 'video') {
+          const url = (localStreamRef.current as unknown as { toURL?: () => string }).toURL?.();
+          if (url) {
+            setLocalStreamUrl(url);
+          }
+        }
         return localStreamRef.current;
       }
       const stream = await wrtc.mediaDevices.getUserMedia({
@@ -138,6 +309,19 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
         video: media === 'video'
       });
       localStreamRef.current = stream as unknown as MediaStream;
+      if (Platform.OS !== 'web' && media === 'video') {
+        const url = (stream as unknown as { toURL?: () => string }).toURL?.();
+        if (url) {
+          setLocalStreamUrl(url);
+        }
+      }
+      if (Platform.OS === 'web' && typeof document !== 'undefined' && media === 'video') {
+        const el = document.getElementById('local-video') as HTMLVideoElement | null;
+        if (el) {
+          el.srcObject = stream as unknown as MediaStream;
+          void el.play?.().catch(() => undefined);
+        }
+      }
       return localStreamRef.current;
     };
 
@@ -351,6 +535,22 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
     };
   }, [cleanupMedia, conversationId, media, navigation, callRole]);
 
+  useEffect(() => {
+    if (status === 'active' && callStartMs === null) {
+      setCallStartMs(Date.now());
+    }
+  }, [status, callStartMs]);
+
+  useEffect(() => {
+    if (status !== 'active' || callStartMs === null) {
+      return;
+    }
+    const tick = () => setElapsedSec(Math.floor((Date.now() - callStartMs) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [status, callStartMs]);
+
   const wrtc = wrtcRef.current ?? loadWebRtc();
   const RTCView = wrtc.RTCView;
 
@@ -363,77 +563,423 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
           ? ''
           : '';
 
-  return (
-    <View className="flex-1 px-4 pt-4" style={{ backgroundColor: palette.background }}>
-      <Text className="mb-2 text-center text-lg font-semibold" style={{ color: palette.text }}>
-        {media === 'video' ? 'Video call' : 'Voice call'}
-      </Text>
-      <Text className="mb-4 text-center text-sm" style={{ color: palette.muted }}>
-        Conversation {conversationId.slice(0, 8)}…
-      </Text>
+  if (media === 'audio') {
+    return (
+      <SafeAreaView className="flex-1" edges={['top', 'bottom']} style={{ backgroundColor: WA_CALL_BG }}>
+        <StatusBar barStyle="light-content" />
+        <View className="flex-1 px-5">
+          <View className="min-h-[44px] flex-row items-center justify-end">
+            {status === 'active' ? (
+              <Text
+                className="text-base font-medium tabular-nums"
+                style={{ color: '#e9edef' }}
+              >
+                {formatCallDuration(elapsedSec)}
+              </Text>
+            ) : null}
+          </View>
 
-      {(status === 'connecting' || status === 'ringing') && !errorMessage && (
-        <View className="mb-6 items-center">
-          <ActivityIndicator size="large" color={palette.action} />
-          <Text className="mt-2" style={{ color: palette.muted }}>
-            {statusLabel}
-          </Text>
+          <View className="flex-1 items-center justify-center pb-8">
+            <View
+              className="mb-5 h-[148px] w-[148px] items-center justify-center overflow-hidden rounded-full"
+              style={{
+                backgroundColor: WA_AVATAR_INNER,
+                borderWidth: 3,
+                borderColor: 'rgba(255,255,255,0.07)'
+              }}
+            >
+              {peerAvatarUri ? (
+                <Image
+                  source={{ uri: peerAvatarUri }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={{ fontSize: 52, fontWeight: '600', color: '#e9edef' }}>{avatarLetter}</Text>
+              )}
+            </View>
+            <Text className="mb-2 text-center text-2xl font-medium" style={{ color: '#e9edef' }}>
+              {resolvedPeerName ?? 'Voice call'}
+            </Text>
+            <Text className="mb-1 text-center text-base" style={{ color: WA_SUBTEXT }}>
+              {errorMessage
+                ? errorMessage
+                : status === 'ringing'
+                  ? 'Ringing…'
+                  : status === 'connecting'
+                    ? 'Connecting…'
+                    : status === 'active'
+                      ? 'On call'
+                      : status === 'ended'
+                        ? 'Call ended'
+                        : ''}
+            </Text>
+            {(status === 'connecting' || status === 'ringing') && !errorMessage && (
+              <View className="mt-8 items-center">
+                <ActivityIndicator size="large" color="rgba(233,237,239,0.85)" />
+              </View>
+            )}
+          </View>
+
+          <View className="pb-8">
+            <View className="mb-8 flex-row items-center justify-center" style={{ gap: 40 }}>
+              <Pressable
+                accessibilityLabel={speakerOn ? 'Speaker on' : 'Earpiece'}
+                className="h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: 'rgba(255,255,255,0.12)' }}
+                onPress={() => void toggleSpeakerRoute()}
+              >
+                <Ionicons
+                  name={speakerOn ? 'volume-high' : 'phone-portrait-outline'}
+                  size={28}
+                  color="#e9edef"
+                />
+              </Pressable>
+              <Pressable
+                accessibilityLabel={micMuted ? 'Unmute' : 'Mute'}
+                className="h-16 w-16 items-center justify-center rounded-full"
+                style={{
+                  backgroundColor: micMuted ? 'rgba(234,0,56,0.25)' : 'rgba(255,255,255,0.12)'
+                }}
+                onPress={toggleMic}
+              >
+                <Ionicons
+                  name={micMuted ? 'mic-off' : 'mic'}
+                  size={28}
+                  color="#e9edef"
+                />
+              </Pressable>
+            </View>
+            <View className="items-center">
+              <Pressable
+                accessibilityLabel="End call"
+                className="h-[72px] w-[72px] items-center justify-center rounded-full"
+                style={{ backgroundColor: WA_END_RED }}
+                onPress={hangUp}
+              >
+                <Ionicons
+                  name="call"
+                  size={32}
+                  color="#fff"
+                  style={{ transform: [{ rotate: '135deg' }] }}
+                />
+              </Pressable>
+            </View>
+          </View>
         </View>
-      )}
 
-      {errorMessage && (
-        <Text className="mb-4 text-center" style={{ color: palette.muted }}>
-          {errorMessage}
-        </Text>
-      )}
+        {Platform.OS === 'web' && (
+          <>
+            {createElement('audio', {
+              id: 'remote-audio',
+              autoPlay: true,
+              playsInline: true,
+              style: { width: 0, height: 0, opacity: 0, position: 'absolute' as const }
+            })}
+          </>
+        )}
 
-      {Platform.OS === 'web' && media === 'video' && (
-        <>
-          {createElement('video', {
-            id: 'remote-video',
-            autoPlay: true,
-            playsInline: true,
-            style: { width: '100%', minHeight: 220, backgroundColor: '#000', borderRadius: 12 }
-          })}
-        </>
-      )}
+        {Platform.OS !== 'web' && remoteStreamUrl && (
+          <RTCView
+            streamURL={remoteStreamUrl}
+            style={{ width: '100%', height: 1, opacity: 0, borderRadius: 12 }}
+          />
+        )}
+      </SafeAreaView>
+    );
+  }
 
-      {Platform.OS === 'web' && media === 'audio' && (
-        <>
-          {createElement('audio', {
-            id: 'remote-audio',
-            autoPlay: true,
-            playsInline: true,
-            style: { width: 0, height: 0, opacity: 0, position: 'absolute' as const }
-          })}
-        </>
-      )}
+  const videoTopRight =
+    status === 'active'
+      ? formatCallDuration(elapsedSec)
+      : status === 'ringing' || status === 'connecting'
+        ? statusLabel
+        : '';
 
-      {Platform.OS !== 'web' && remoteStreamUrl && (
-        <RTCView
-          streamURL={remoteStreamUrl}
-          style={
-            media === 'video'
-              ? { width: '100%', height: 280, borderRadius: 12, objectFit: 'cover' }
-              : { width: '100%', height: 1, opacity: 0, borderRadius: 12 }
-          }
-        />
-      )}
+  const videoControlBtn = {
+    size: 56 as const,
+    bg: 'rgba(255,255,255,0.14)' as const
+  };
 
-      <View className="mt-8 flex-row items-center justify-center">
-        <Pressable
-          className="items-center justify-center rounded-full p-4"
-          style={{ backgroundColor: '#c0392b' }}
-          onPress={hangUp}
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: WA_CALL_BG }} edges={['top']}>
+      <StatusBar barStyle="light-content" />
+      <View style={{ flex: 1, backgroundColor: WA_CALL_BG }}>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 24,
+            paddingBottom: 14,
+            backgroundColor: WA_VIDEO_SCRIM_TOP
+          }}
         >
-          <Ionicons name="call" size={28} color="#fff" />
-        </Pressable>
-      </View>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start'
+            }}
+          >
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              {resolvedPeerName ? (
+                <>
+                  <Text style={{ color: '#e9edef', fontSize: 19, fontWeight: '600' }}>{resolvedPeerName}</Text>
+                  <Text style={{ color: WA_SUBTEXT, fontSize: 13, marginTop: 3 }}>Video call</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={{ color: '#e9edef', fontSize: 19, fontWeight: '600' }}>Video call</Text>
+                  <Text style={{ color: WA_SUBTEXT, fontSize: 13, marginTop: 3 }}>
+                    {partner?.sessionId ? formatSessionShort(partner.sessionId) : ''}
+                  </Text>
+                </>
+              )}
+            </View>
+            {videoTopRight ? (
+              <Text
+                style={{
+                  color: '#e9edef',
+                  fontSize: 17,
+                  fontWeight: '500',
+                  fontVariant: ['tabular-nums']
+                }}
+              >
+                {videoTopRight}
+              </Text>
+            ) : null}
+          </View>
+        </View>
 
-      <Text className="mt-6 text-center text-xs" style={{ color: palette.muted }}>
-        Dev build required (not Expo Go). Hosted: set EXPO_PUBLIC_API_URL to your HTTPS API. Cross-network calls
-        often need EXPO_PUBLIC_ICE_TURN_* in .env at build time.
-      </Text>
-    </View>
+        {errorMessage ? (
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              backgroundColor: 'rgba(234,0,56,0.2)'
+            }}
+          >
+            <Text style={{ color: '#ffc9c9', textAlign: 'center', fontSize: 14 }}>{errorMessage}</Text>
+          </View>
+        ) : null}
+
+        <View style={{ flex: 1, backgroundColor: '#000', position: 'relative' }}>
+          {Platform.OS !== 'web' ? (
+            <>
+              {remoteStreamUrl ? (
+                <RTCView
+                  streamURL={remoteStreamUrl}
+                  style={
+                    {
+                      ...StyleSheet.absoluteFillObject,
+                      backgroundColor: '#000'
+                    } as object
+                  }
+                />
+              ) : (
+                <View
+                  style={[
+                    StyleSheet.absoluteFillObject,
+                    {
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: WA_CALL_BG
+                    }
+                  ]}
+                >
+                  <View
+                    style={{
+                      width: 128,
+                      height: 128,
+                      borderRadius: 64,
+                      backgroundColor: WA_AVATAR_INNER,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderWidth: 3,
+                      borderColor: 'rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <Text style={{ fontSize: 48, fontWeight: '600', color: '#e9edef' }}>{avatarLetter}</Text>
+                  </View>
+                  <Text style={{ marginTop: 18, color: WA_SUBTEXT, fontSize: 16 }}>
+                    {status === 'ringing' ? 'Ringing…' : 'Waiting for their video…'}
+                  </Text>
+                  {(status === 'connecting' || status === 'ringing') && !errorMessage ? (
+                    <ActivityIndicator style={{ marginTop: 20 }} color="#e9edef" />
+                  ) : null}
+                </View>
+              )}
+              {localStreamUrl ? (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 12,
+                    right: 12,
+                    width: 118,
+                    height: 158,
+                    borderRadius: 14,
+                    overflow: 'hidden',
+                    borderWidth: 2,
+                    borderColor: '#ffffff',
+                    backgroundColor: '#000'
+                  }}
+                >
+                  {!cameraOff ? (
+                    <RTCView
+                      streamURL={localStreamUrl}
+                      style={
+                        {
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          transform: [{ scaleX: -1 }]
+                        } as object
+                      }
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        flex: 1,
+                        backgroundColor: WA_AVATAR_INNER,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <Ionicons name="videocam-off" size={34} color="#e9edef" />
+                    </View>
+                  )}
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <View style={{ flex: 1, position: 'relative', backgroundColor: '#000' }}>
+              {createElement('video', {
+                id: 'remote-video',
+                autoPlay: true,
+                playsInline: true,
+                style: {
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  backgroundColor: '#000'
+                }
+              })}
+              {createElement('video', {
+                id: 'local-video',
+                autoPlay: true,
+                playsInline: true,
+                muted: true,
+                style: {
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  width: 118,
+                  height: 158,
+                  borderRadius: 14,
+                  objectFit: 'cover',
+                  border: '2px solid #fff',
+                  backgroundColor: '#000'
+                }
+              })}
+            </View>
+          )}
+        </View>
+
+        <View
+          style={{
+            paddingHorizontal: 12,
+            paddingTop: 20,
+            paddingBottom: insets.bottom + 16,
+            backgroundColor: WA_VIDEO_SCRIM_BOTTOM
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'center',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 16
+            }}
+          >
+            <Pressable
+              accessibilityLabel={speakerOn ? 'Speaker' : 'Earpiece'}
+              onPress={() => void toggleSpeakerRoute()}
+              style={{
+                width: videoControlBtn.size,
+                height: videoControlBtn.size,
+                borderRadius: videoControlBtn.size / 2,
+                backgroundColor: videoControlBtn.bg,
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              <Ionicons
+                name={speakerOn ? 'volume-high' : 'phone-portrait-outline'}
+                size={26}
+                color="#e9edef"
+              />
+            </Pressable>
+            <Pressable
+              accessibilityLabel={micMuted ? 'Unmute' : 'Mute'}
+              onPress={toggleMic}
+              style={{
+                width: videoControlBtn.size,
+                height: videoControlBtn.size,
+                borderRadius: videoControlBtn.size / 2,
+                backgroundColor: micMuted ? 'rgba(234,0,56,0.35)' : videoControlBtn.bg,
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              <Ionicons name={micMuted ? 'mic-off' : 'mic'} size={26} color="#e9edef" />
+            </Pressable>
+            {Platform.OS !== 'web' ? (
+              <Pressable
+                accessibilityLabel={cameraOff ? 'Turn camera on' : 'Turn camera off'}
+                onPress={toggleCamera}
+                style={{
+                  width: videoControlBtn.size,
+                  height: videoControlBtn.size,
+                  borderRadius: videoControlBtn.size / 2,
+                  backgroundColor: cameraOff ? 'rgba(234,0,56,0.35)' : videoControlBtn.bg,
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
+              >
+                <Ionicons
+                  name={cameraOff ? 'videocam-off' : 'videocam'}
+                  size={26}
+                  color="#e9edef"
+                />
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityLabel="End call"
+              onPress={hangUp}
+              style={{
+                width: videoControlBtn.size,
+                height: videoControlBtn.size,
+                borderRadius: videoControlBtn.size / 2,
+                backgroundColor: WA_END_RED,
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              <Ionicons
+                name="call"
+                size={28}
+                color="#fff"
+                style={{ transform: [{ rotate: '135deg' }] }}
+              />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 };
