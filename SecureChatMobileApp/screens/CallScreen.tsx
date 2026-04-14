@@ -431,7 +431,8 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
       </View>
 
       <Text className="mt-6 text-center text-xs" style={{ color: palette.muted }}>
-        On device, use a dev build (not Expo Go). Restrictive networks: set TURN in .env.
+        Dev build required (not Expo Go). Hosted: set EXPO_PUBLIC_API_URL to your HTTPS API. Cross-network calls
+        often need EXPO_PUBLIC_ICE_TURN_* in .env at build time.
       </Text>
     </View>
   );

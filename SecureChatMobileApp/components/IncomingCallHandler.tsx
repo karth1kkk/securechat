@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { navigationRef } from '../navigation/navigationRef';
+import { useIncomingCallRingtone } from '../hooks/useIncomingCallRingtone';
 import { getCallSignalService } from '../services/callSignalRService';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -34,6 +35,9 @@ export const IncomingCallHandler: React.FC<Props> = ({ jwtToken, selfUserId, pin
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingRef = useRef<Pending | null>(null);
   pendingRef.current = pending;
+
+  /** Ring for any incoming invite — including while PIN lock is on so you hear before unlocking. */
+  useIncomingCallRingtone(!!pending);
 
   useEffect(() => {
     if (!jwtToken || !selfUserId) {
