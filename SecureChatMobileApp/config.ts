@@ -11,18 +11,24 @@ function trim(s: string | undefined): string {
   return typeof s === 'string' ? s.trim() : '';
 }
 
-/** Prefer `extra` from app.config.js (embedded at build) so hosted builds match native/web bundles. */
+/**
+ * API / GraphQL base URLs.
+ *
+ * **Order matters:** `process.env.EXPO_PUBLIC_*` is inlined by Metro from `.env` / EAS env at bundle time.
+ * `app.config.js` → `extra` is evaluated in Node and may default to localhost if env is not visible there,
+ * which would wrongly override a correct Metro-inlined URL. So always prefer Metro env first, then `extra`.
+ */
 const API_URL = (
-  trim(extra.apiUrl) ||
   trim(process.env.EXPO_PUBLIC_API_URL) ||
   trim(process.env.API_URL) ||
+  trim(extra.apiUrl) ||
   'http://localhost:5002'
 ).replace(/\/$/, '');
 
 const GRAPHQL_URL = (
-  trim(extra.graphqlUrl) ||
   trim(process.env.EXPO_PUBLIC_GRAPHQL_URL) ||
   trim(process.env.GRAPHQL_URL) ||
+  trim(extra.graphqlUrl) ||
   `${API_URL}/graphql`
 ).replace(/\/graphql\/?$/, '/graphql');
 
