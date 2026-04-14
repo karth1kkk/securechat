@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApolloClient } from '@apollo/client';
@@ -7,8 +7,15 @@ import { GET_USER_BY_SESSION_ID } from '../graphql/queries';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
 
-export const NewChatScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'NewChat'>> = ({ navigation }) => {
+export const NewChatScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'NewChat'>> = ({ navigation, route }) => {
   const [sessionId, setSessionId] = useState('');
+
+  useEffect(() => {
+    const prefilled = route.params?.prefilledSessionId?.trim();
+    if (prefilled) {
+      setSessionId(prefilled);
+    }
+  }, [route.params?.prefilledSessionId]);
   const [status, setStatus] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const client = useApolloClient();

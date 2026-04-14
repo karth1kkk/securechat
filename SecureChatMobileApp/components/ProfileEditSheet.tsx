@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -10,9 +11,12 @@ import {
   TextInput,
   View
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { preferencesService } from '../services/preferencesService';
 import { useTheme } from '../theme/ThemeContext';
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -23,13 +27,91 @@ export function ProfileEditSheet({ visible, onClose, onSaved }: Props) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const refreshLocal = async () => {
+    const [name, photo] = await Promise.all([
+      preferencesService.getUsername(),
+      preferencesService.getProfilePhotoUri()
+    ]);
+    setUsername(name ?? '');
+    setAvatarUri(photo);
+  };
 
   useEffect(() => {
     if (visible) {
-      void preferencesService.getUsername().then((saved) => setUsername(saved ?? ''));
+      void refreshLocal();
     }
   }, [visible]);
+
+  const persistPhoto = async (uri: string) => {
+    await preferencesService.setProfilePhotoFromLocalUri(uri);
+    setAvatarUri(await preferencesService.getProfilePhotoUri());
+    onSaved?.();
+  };
+
+  const pickFromLibrary = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow photo library access to choose a profile picture.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) {
+      return;
+    }
+    try {
+      await persistPhoto(result.assets[0].uri);
+    } catch {
+      Alert.alert('Unable to save photo', 'Please try another image.');
+    }
+  };
+
+  const takePhoto = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow camera access to take a profile picture.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) {
+      return;
+    }
+    try {
+      await persistPhoto(result.assets[0].uri);
+    } catch {
+      Alert.alert('Unable to save photo', 'Please try again.');
+    }
+  };
+
+  const removePhoto = () => {
+    Alert.alert('Remove profile photo?', 'Your initials will show instead.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await preferencesService.clearProfilePhoto();
+            setAvatarUri(null);
+            onSaved?.();
+          } catch {
+            Alert.alert('Error', 'Could not remove the photo.');
+          }
+        }
+      }
+    ]);
+  };
 
   const handleSave = async () => {
     Keyboard.dismiss();
@@ -72,6 +154,51 @@ export function ProfileEditSheet({ visible, onClose, onSaved }: Props) {
             <Text className="mb-[18px] text-center text-lg font-bold" style={{ color: palette.text }}>
               Edit profile
             </Text>
+
+            <Text className="mb-2 text-sm font-semibold" style={{ color: palette.muted }}>
+              Profile photo
+            </Text>
+            <View className="mb-4 flex-row items-center">
+              <Pressable
+                onPress={pickFromLibrary}
+                className="h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-full"
+                style={{ backgroundColor: palette.card, borderWidth: 1, borderColor: palette.border }}
+                accessibilityRole="button"
+                accessibilityLabel="Choose profile photo"
+              >
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} className="h-full w-full" resizeMode="cover" />
+                ) : (
+                  <Feather name="user" size={32} color={palette.muted} />
+                )}
+              </Pressable>
+              <View className="ml-4 flex-1">
+                <Pressable
+                  className="mb-2 flex-row items-center rounded-[12px] py-2"
+                  onPress={() => void pickFromLibrary()}
+                >
+                  <Feather name="image" size={18} color={palette.action} />
+                  <Text className="ml-2 text-sm font-semibold" style={{ color: palette.action }}>
+                    Choose from library
+                  </Text>
+                </Pressable>
+                <Pressable className="mb-2 flex-row items-center rounded-[12px] py-2" onPress={() => void takePhoto()}>
+                  <Feather name="camera" size={18} color={palette.action} />
+                  <Text className="ml-2 text-sm font-semibold" style={{ color: palette.action }}>
+                    Take photo
+                  </Text>
+                </Pressable>
+                {avatarUri ? (
+                  <Pressable className="flex-row items-center rounded-[12px] py-2" onPress={removePhoto}>
+                    <Feather name="trash-2" size={18} color="#f87171" />
+                    <Text className="ml-2 text-sm font-semibold" style={{ color: '#f87171' }}>
+                      Remove photo
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+
             <Text className="mb-2 text-sm font-semibold" style={{ color: palette.muted }}>
               Profile name
             </Text>

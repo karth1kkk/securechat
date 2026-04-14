@@ -2,7 +2,7 @@ export type RootStackParamList = {
   ChatList: undefined;
   Chat: { conversationId: string };
   Call: { conversationId: string; media: 'audio' | 'video' };
-  NewChat: undefined;
+  NewChat: { prefilledSessionId?: string } | undefined;
   Settings: undefined;
   SecurityCenter: undefined;
   Profile: undefined;
@@ -11,4 +11,9 @@ export type RootStackParamList = {
   Appearance: undefined;
   ConversationsSettings: undefined;
   Donate: undefined;
+  MessageRequests: undefined;
+  RecoveryPassword: undefined;
+  Help: undefined;
+  ClearData: undefined;
+  Notifications: undefined;
 };

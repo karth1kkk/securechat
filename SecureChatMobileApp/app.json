@@ -14,8 +14,9 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "SecureChat uses the camera for video calls.",
-        "NSMicrophoneUsageDescription": "SecureChat uses the microphone for voice and video calls."
+        "NSCameraUsageDescription": "SecureChat uses the camera for video calls and your profile photo.",
+        "NSMicrophoneUsageDescription": "SecureChat uses the microphone for voice and video calls.",
+        "NSPhotoLibraryUsageDescription": "SecureChat needs access to your photo library to set a profile picture."
       }
     },
     "android": {

@@ -1,18 +1,17 @@
 import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Alert, Pressable, ScrollView, Share, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
-import { preferencesService, DEFAULT_THEME } from '../services/preferencesService';
+import { preferencesService } from '../services/preferencesService';
 import { sessionService } from '../services/sessionService';
 import { useTheme } from '../theme/ThemeContext';
 import * as Clipboard from 'expo-clipboard';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ProfileEditSheet } from '../components/ProfileEditSheet';
-import { sentMessagePlaintextService } from '../services/sentMessagePlaintextService';
-import { threadCachePersistence } from '../services/threadCachePersistence';
+import { SessionQrSheet } from '../components/SessionQrSheet';
+import { Ionicons } from '@expo/vector-icons';
 
 type MenuItem = {
   label: string;
@@ -27,12 +26,19 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
+
+  const refreshProfile = useCallback(() => {
+    void preferencesService.getUsername().then(setUsername);
+    void preferencesService.getProfilePhotoUri().then(setProfilePhotoUri);
+    void sessionService.getSession().then((session) => setSessionId(session?.sessionId ?? null));
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      preferencesService.getUsername().then(setUsername);
-      sessionService.getSession().then((session) => setSessionId(session?.sessionId ?? null));
-    }, [])
+      refreshProfile();
+    }, [refreshProfile])
   );
 
   const initials = useMemo(() => {
@@ -63,30 +69,6 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
     await Clipboard.setStringAsync(sessionId);
     setFeedback('Copied!');
     setTimeout(() => setFeedback(null), 1400);
-  };
-
-  const handleClearData = () => {
-    Alert.alert('Clear local data', 'This removes your stored session and preferences.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear data',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await AsyncStorage.clear();
-            await preferencesService.setUsername(null);
-            await preferencesService.setThemePreference(DEFAULT_THEME);
-            await sentMessagePlaintextService.clear();
-            await threadCachePersistence.clearAll();
-            await sessionService.clearSession();
-            Alert.alert('All data cleared', 'Re-open the app to reinitialize the session.');
-          } catch (error) {
-            console.error('Clear data failed', error);
-            Alert.alert('Unable to clear data', 'Please try again.');
-          }
-        }
-      }
-    ]);
   };
 
   const menuSections: MenuItem[][] = [
@@ -123,7 +105,7 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
       {
         label: 'Notifications',
         icon: 'bell',
-        onPress: () => Alert.alert('Notifications', 'Manage push and badge settings in a future update.')
+        onPress: () => navigation.navigate('Notifications')
       }
     ],
     [
@@ -140,24 +122,24 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
       {
         label: 'Message Requests',
         icon: 'inbox',
-        onPress: () => Alert.alert('Message Requests', 'This screen will help you review new requests.')
+        onPress: () => navigation.navigate('MessageRequests')
       }
     ],
     [
       {
         label: 'Recovery Password',
         icon: 'lock',
-        onPress: () => Alert.alert('Recovery Password', 'Coming soon to keep your session reachable.')
+        onPress: () => navigation.navigate('RecoveryPassword')
       },
       {
         label: 'Help',
         icon: 'info',
-        onPress: () => Alert.alert('Help', 'Documentation and support will land here shortly.')
+        onPress: () => navigation.navigate('Help')
       },
       {
         label: 'Clear Data',
         icon: 'trash-2',
-        onPress: handleClearData,
+        onPress: () => navigation.navigate('ClearData'),
         destructive: true
       }
     ]
@@ -168,9 +150,24 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => setProfileEditOpen(true)} className="mr-2.5 p-1.5">
-          <Feather name="edit" size={20} color={palette.action} />
-        </Pressable>
+        <View className="mr-2.5 flex-row items-center">
+          <Pressable
+            onPress={() => setProfileEditOpen(true)}
+            className="p-1.5"
+            accessibilityRole="button"
+            accessibilityLabel="Edit profile"
+          >
+            <Feather name="edit" size={20} color={palette.action} />
+          </Pressable>
+          <Pressable
+            onPress={() => setQrOpen(true)}
+            className="p-1.5"
+            accessibilityRole="button"
+            accessibilityLabel="Show or scan Session ID QR code"
+          >
+            <Ionicons name="qr-code-outline" size={22} color={palette.action} />
+          </Pressable>
+        </View>
       )
     });
   }, [navigation, palette.action]);
@@ -196,35 +193,32 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
         <View className="flex-row items-center justify-center">
           <View className="relative">
             <Pressable
-              className="h-[88px] w-[88px] items-center justify-center rounded-full"
+              className="h-[88px] w-[88px] items-center justify-center overflow-hidden rounded-full"
               style={{ backgroundColor: palette.card }}
               onPress={() => setProfileEditOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Edit profile photo"
             >
-              <Text className="text-[32px] font-bold" style={{ color: palette.text }}>
-                {initials}
-              </Text>
-            </Pressable>
-            <Pressable
-              className="absolute -bottom-1.5 -right-1.5 h-8 w-8 items-center justify-center rounded-full"
-              style={{ backgroundColor: palette.action }}
-              onPress={() => setProfileEditOpen(true)}
-            >
-              <Feather name="edit-3" size={14} color="#fff" />
+              {profilePhotoUri ? (
+                <Image source={{ uri: profilePhotoUri }} className="h-full w-full" resizeMode="cover" />
+              ) : (
+                <Text className="text-[32px] font-bold" style={{ color: palette.text }}>
+                  {initials}
+                </Text>
+              )}
             </Pressable>
             <View
-              className="absolute right-2.5 top-2.5 h-5 w-5 items-center justify-center rounded-[10px]"
+              className="absolute -bottom-1.5 -right-1.5 h-8 w-8 items-center justify-center rounded-full"
               style={{
-                backgroundColor: palette.surface,
-                borderColor: 'rgba(255,255,255,0.2)',
+                backgroundColor: palette.action,
                 shadowColor: palette.shadow,
                 shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.5,
-                shadowRadius: 6,
-                elevation: 4,
-                borderWidth: 1
+                shadowOpacity: 0.35,
+                shadowRadius: 4,
+                elevation: 4
               }}
             >
-              <Feather name="plus" size={12} color={palette.action} />
+              <Feather name="camera" size={15} color="#fff" />
             </View>
           </View>
         </View>
@@ -307,7 +301,13 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
     <ProfileEditSheet
       visible={profileEditOpen}
       onClose={() => setProfileEditOpen(false)}
-      onSaved={() => void preferencesService.getUsername().then(setUsername)}
+      onSaved={refreshProfile}
+    />
+    <SessionQrSheet
+      visible={qrOpen}
+      onClose={() => setQrOpen(false)}
+      sessionId={sessionId}
+      navigation={navigation}
     />
     </>
   );
