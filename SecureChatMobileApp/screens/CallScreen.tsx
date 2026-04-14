@@ -2,18 +2,17 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
+import { Camera } from 'expo-camera';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { createElement } from 'react';
 import { RootStackParamList } from '../navigation/types';
 import { sessionService } from '../services/sessionService';
 import { CallSignalRService } from '../services/callSignalRService';
 import { useTheme } from '../theme/ThemeContext';
+import { buildRtcConfiguration } from '../config';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Call'>;
-
-const ICE_SERVERS: RTCConfiguration = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-};
 
 type WrtcModule = {
   RTCPeerConnection: typeof RTCPeerConnection;
@@ -39,8 +38,14 @@ const loadWebRtc = (): WrtcModule => {
       RTCView: Stub
     };
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require('react-native-webrtc') as WrtcModule;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('react-native-webrtc') as WrtcModule;
+  } catch {
+    throw new Error(
+      'Native WebRTC is not available. Build and run a development client (npx expo run:ios / run:android), not Expo Go.'
+    );
+  }
 };
 
 const shouldInitiate = (selfId: string, peerId: string) => selfId.localeCompare(peerId) > 0;
@@ -129,7 +134,7 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
         return pcRef.current;
       }
       const stream = await ensureLocalStream(wrtc);
-      const pc = new wrtc.RTCPeerConnection(ICE_SERVERS);
+      const pc = new wrtc.RTCPeerConnection(buildRtcConfiguration());
       pcRef.current = pc;
       stream.getTracks().forEach((track) => {
         pc.addTrack(track, stream as unknown as MediaStream);
@@ -149,12 +154,28 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
 
         selfIdRef.current = session.userId;
 
+        if (Platform.OS !== 'web' && Constants.appOwnership === 'expo') {
+          setErrorMessage(
+            'Calls need a development build with WebRTC (run npx expo run:ios or npx expo run:android). Expo Go cannot load native WebRTC.'
+          );
+          setStatus('error');
+          return;
+        }
+
         if (Platform.OS !== 'web') {
           const audio = await Audio.requestPermissionsAsync();
           if (!audio.granted) {
             setErrorMessage('Microphone permission is required for calls.');
             setStatus('error');
             return;
+          }
+          if (media === 'video') {
+            const cam = await Camera.requestCameraPermissionsAsync();
+            if (!cam.granted) {
+              setErrorMessage('Camera permission is required for video calls.');
+              setStatus('error');
+              return;
+            }
           }
         }
 
@@ -327,7 +348,7 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
       </View>
 
       <Text className="mt-6 text-center text-xs" style={{ color: palette.muted }}>
-        WebRTC with STUN. Restrictive networks may need TURN. Use a development build for full native WebRTC.
+        On device, use a dev build (not Expo Go). Restrictive networks: set TURN in .env.
       </Text>
     </View>
   );

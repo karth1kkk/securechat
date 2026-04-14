@@ -31,6 +31,15 @@
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SecureChat uses the camera for video calls."
+        }
+      ]
+    ]
   }
 }
