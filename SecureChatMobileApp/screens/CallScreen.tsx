@@ -110,9 +110,17 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
           return;
         }
         if (Platform.OS === 'web' && typeof document !== 'undefined') {
-          const el = document.getElementById('remote-video') as HTMLVideoElement | null;
-          if (el) {
-            el.srcObject = remoteStream;
+          if (media === 'video') {
+            const el = document.getElementById('remote-video') as HTMLVideoElement | null;
+            if (el) {
+              el.srcObject = remoteStream;
+            }
+          } else {
+            const el = document.getElementById('remote-audio') as HTMLAudioElement | null;
+            if (el) {
+              el.srcObject = remoteStream;
+              void el.play?.().catch(() => undefined);
+            }
           }
         } else if (Platform.OS !== 'web') {
           const url = (remoteStream as unknown as { toURL: () => string }).toURL();
@@ -154,7 +162,10 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
       makingOfferRef.current = true;
       try {
         const pc = await ensurePc(wrtcLocal);
-        const offer = await pc.createOffer();
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: media === 'video'
+        });
         await pc.setLocalDescription(offer);
         await signalR.sendSignal(conversationId, {
           type: 'offer',
@@ -205,6 +216,15 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
               return;
             }
           }
+          // WebRTC remote playback is often silent until the audio session allows play + record (iOS / Android).
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: true,
+            // false = route to main speaker (more reliable for hearing than earpiece, esp. on emulators).
+            playThroughEarpieceAndroid: false
+          });
         }
 
         const wrtc = loadWebRtc();
@@ -314,6 +334,15 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
     return () => {
       cancelled = true;
       offReceive?.();
+      if (Platform.OS !== 'web') {
+        void Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false
+        }).catch(() => undefined);
+      }
       if (!exitedCleanlyRef.current) {
         void signalR.sendSignal(conversationId, { type: 'hangup', callId: conversationId }).catch(() => undefined);
       }
@@ -369,8 +398,26 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
         </>
       )}
 
+      {Platform.OS === 'web' && media === 'audio' && (
+        <>
+          {createElement('audio', {
+            id: 'remote-audio',
+            autoPlay: true,
+            playsInline: true,
+            style: { width: 0, height: 0, opacity: 0, position: 'absolute' as const }
+          })}
+        </>
+      )}
+
       {Platform.OS !== 'web' && remoteStreamUrl && (
-        <RTCView streamURL={remoteStreamUrl} style={{ width: '100%', height: 280, borderRadius: 12 }} />
+        <RTCView
+          streamURL={remoteStreamUrl}
+          style={
+            media === 'video'
+              ? { width: '100%', height: 280, borderRadius: 12, objectFit: 'cover' }
+              : { width: '100%', height: 1, opacity: 0, borderRadius: 12 }
+          }
+        />
       )}
 
       <View className="mt-8 flex-row items-center justify-center">
