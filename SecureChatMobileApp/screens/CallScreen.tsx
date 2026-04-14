@@ -135,7 +135,7 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
   const { data: convData } = useQuery(CONVERSATION_BY_ID, {
     variables: { conversationId },
     skip: hasParamPeerName,
-    fetchPolicy: 'cache-first'
+    fetchPolicy: 'network-only'
   });
 
   const partner = useMemo(() => {
@@ -146,9 +146,12 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
     return parts.find((p: { userId: string }) => !sameUserId(p.userId, currentUserId)) ?? null;
   }, [convData, currentUserId]);
 
+  const partnerHasServerUsername =
+    typeof partner?.username === 'string' && partner.username.trim().length > 0;
+
   const { data: peerUserLookup } = useQuery(GET_USER_BY_SESSION_ID, {
     variables: { sessionId: partner?.sessionId ?? '' },
-    skip: hasParamPeerName || !partner?.sessionId || !!partner?.username,
+    skip: hasParamPeerName || !partner?.sessionId || partnerHasServerUsername,
     fetchPolicy: 'network-only'
   });
 
@@ -159,9 +162,11 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
     if (!partner) {
       return null;
     }
+    const fromConv = partner.username?.trim();
+    const fromLookup = peerUserLookup?.userBySessionId?.username?.trim();
     return (
-      partner.username ??
-      peerUserLookup?.userBySessionId?.username ??
+      (fromConv && fromConv.length > 0 ? fromConv : null) ??
+      (fromLookup && fromLookup.length > 0 ? fromLookup : null) ??
       (partner.sessionId ? formatSessionShort(partner.sessionId) : null)
     );
   }, [hasParamPeerName, paramPeerName, partner, peerUserLookup]);

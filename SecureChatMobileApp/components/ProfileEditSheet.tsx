@@ -14,6 +14,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { useApolloClient } from '@apollo/client';
+import { UPDATE_USERNAME } from '../graphql/mutations';
 import { preferencesService } from '../services/preferencesService';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -24,6 +26,7 @@ type Props = {
 };
 
 export function ProfileEditSheet({ visible, onClose, onSaved }: Props) {
+  const client = useApolloClient();
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
@@ -118,12 +121,20 @@ export function ProfileEditSheet({ visible, onClose, onSaved }: Props) {
     setSaving(true);
     try {
       const normalized = username.trim();
+      await client.mutate({
+        mutation: UPDATE_USERNAME,
+        variables: { input: { username: normalized.length > 0 ? normalized : null } }
+      });
       await preferencesService.setUsername(normalized.length > 0 ? normalized : null);
+      await client.refetchQueries({ include: 'active' });
       onSaved?.();
       onClose();
     } catch (error) {
       console.error('Unable to save username', error);
-      Alert.alert('Unable to save', 'Please try again.');
+      Alert.alert(
+        'Unable to save',
+        'We could not sync your display name to the server. Check your connection and try again.'
+      );
     } finally {
       setSaving(false);
     }

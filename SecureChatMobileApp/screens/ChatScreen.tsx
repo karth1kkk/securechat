@@ -98,7 +98,7 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
   const client = useApolloClient();
   const hydratedRef = useRef(false);
 
-  const { data: conversationData } = useQuery(CONVERSATION_BY_ID, {
+  const { data: conversationData, refetch: refetchConversation } = useQuery(CONVERSATION_BY_ID, {
     variables: { conversationId },
     fetchPolicy: 'network-only',
     errorPolicy: 'all'
@@ -130,9 +130,10 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
       void refreshSessionFromStorage().then((s) => {
         if (s?.jwtToken) {
           void refetchMessages();
+          void refetchConversation();
         }
       });
-    }, [refreshSessionFromStorage, refetchMessages])
+    }, [refreshSessionFromStorage, refetchConversation, refetchMessages])
   );
 
   useEffect(() => {
@@ -170,9 +171,13 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     return parts.find((p: { userId: string }) => !sameUserId(p.userId, currentUserId)) ?? null;
   }, [conversationData, currentUserId]);
 
+  const peerHasServerUsername =
+    typeof partnerParticipant?.username === 'string' &&
+    partnerParticipant.username.trim().length > 0;
+
   const { data: peerUserLookup } = useQuery(GET_USER_BY_SESSION_ID, {
     variables: { sessionId: partnerParticipant?.sessionId ?? '' },
-    skip: !partnerParticipant?.sessionId || !!partnerParticipant?.username,
+    skip: !partnerParticipant?.sessionId || peerHasServerUsername,
     fetchPolicy: 'network-only'
   });
 
@@ -180,9 +185,11 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     if (!partnerParticipant) {
       return 'Conversation';
     }
+    const fromConv = partnerParticipant.username?.trim();
+    const fromLookup = peerUserLookup?.userBySessionId?.username?.trim();
     return (
-      partnerParticipant.username ??
-      peerUserLookup?.userBySessionId?.username ??
+      (fromConv && fromConv.length > 0 ? fromConv : null) ??
+      (fromLookup && fromLookup.length > 0 ? fromLookup : null) ??
       (partnerParticipant.sessionId ? formatSession(partnerParticipant.sessionId) : 'Conversation')
     );
   }, [partnerParticipant, peerUserLookup]);
