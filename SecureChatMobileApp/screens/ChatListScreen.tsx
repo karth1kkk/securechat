@@ -178,13 +178,26 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
         </Pressable>
       ),
       headerRight: () => (
-        <Pressable
-          className="mr-2.5 h-10 w-10 items-center justify-center rounded-full border"
-          style={{ borderColor: palette.border }}
-          onPress={toggleSearch}
-        >
-          <Ionicons name={searchActive ? 'close' : 'search'} size={18} color={palette.text} />
-        </Pressable>
+        <View className="mr-1 flex-row items-center">
+          <Pressable
+            className="mr-1.5 h-10 w-10 items-center justify-center rounded-full border"
+            style={{ borderColor: palette.border }}
+            onPress={() => navigation.navigate('Games')}
+            accessibilityRole="button"
+            accessibilityLabel="Open games"
+          >
+            <Ionicons name="game-controller-outline" size={20} color={palette.text} />
+          </Pressable>
+          <Pressable
+            className="mr-2.5 h-10 w-10 items-center justify-center rounded-full border"
+            style={{ borderColor: palette.border }}
+            onPress={toggleSearch}
+            accessibilityRole="button"
+            accessibilityLabel={searchActive ? 'Close search' : 'Search conversations'}
+          >
+            <Ionicons name={searchActive ? 'close' : 'search'} size={18} color={palette.text} />
+          </Pressable>
+        </View>
       )
     });
   }, [navigation, palette.border, palette.text, searchActive, localUsername, profilePhotoUri]);

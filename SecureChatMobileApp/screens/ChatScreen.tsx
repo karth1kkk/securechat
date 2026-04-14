@@ -5,6 +5,7 @@ import { useApolloClient, useQuery } from '@apollo/client';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatBubble } from '../components/ChatBubble';
+import { TicTacToeChatModal, bubbleTextForMessage } from '../components/TicTacToeChatModal';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { encryptionService } from '../services/encryptionService';
 import { SignalRService } from '../services/signalrService';
@@ -14,16 +15,9 @@ import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
 import { sentMessagePlaintextService } from '../services/sentMessagePlaintextService';
 import { threadCachePersistence, PersistedThreadMessage } from '../services/threadCachePersistence';
+import { ThreadMessage } from '../types/threadMessage';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
-
-interface ThreadMessage {
-  id: string;
-  content: string;
-  isOutgoing: boolean;
-  createdAt: string;
-  status?: 'sending' | 'sent';
-}
 
 const threadCache = new Map<string, ThreadMessage[]>();
 
@@ -62,6 +56,7 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
   const [input, setInput] = useState('');
   const [expiry, setExpiry] = useState(0);
   const [session, setSession] = useState<SessionRecord | null>(null);
+  const [gameModalOpen, setGameModalOpen] = useState(false);
   const flatListRef = useRef<FlatList<ThreadMessage>>(null);
   const signalR = useRef(new SignalRService());
   const client = useApolloClient();
@@ -157,6 +152,15 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     });
   }, []);
 
+  const sessionRef = useRef(session);
+  const currentUserIdRef = useRef(currentUserId);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
   useEffect(() => {
     threadCache.set(conversationId, messages);
     const persist = setTimeout(() => {
@@ -170,42 +174,63 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
       return;
     }
 
-    (async () => {
-      await signalR.current.start(session.jwtToken);
-      await signalR.current.joinConversation(conversationId);
-      signalR.current.onEncryptedMessage((payload) => {
-        if (sameUserId(payload.senderId, currentUserId)) {
-          return;
-        }
-        if (!session?.privateKey) {
-          return;
-        }
-        let plaintext = '[unable to decrypt]';
-        try {
-          plaintext = encryptionService.decryptMessage(payload, session.privateKey);
-        } catch (error) {
-          console.error('Decrypt failed', error);
-        }
+    let cancelled = false;
 
-        addMessage({
-          id: payload.id,
-          content: plaintext,
-          isOutgoing: false,
-          createdAt: new Date().toISOString(),
-          status: 'sent'
+    (async () => {
+      try {
+        await signalR.current.start(session.jwtToken);
+        if (cancelled) {
+          return;
+        }
+        await signalR.current.joinConversation(conversationId);
+        if (cancelled) {
+          return;
+        }
+        signalR.current.onEncryptedMessage((payload) => {
+          if (cancelled) {
+            return;
+          }
+          const payloadConv = payload.conversationId?.trim().toLowerCase();
+          const activeConv = conversationId.trim().toLowerCase();
+          if (payloadConv && payloadConv !== activeConv) {
+            return;
+          }
+          if (sameUserId(payload.senderId, currentUserIdRef.current)) {
+            return;
+          }
+          const privateKey = sessionRef.current?.privateKey;
+          if (!privateKey) {
+            return;
+          }
+          let plaintext = '[unable to decrypt]';
+          try {
+            plaintext = encryptionService.decryptMessage(payload, privateKey);
+          } catch (error) {
+            console.error('Decrypt failed', error);
+          }
+
+          addMessage({
+            id: payload.id,
+            content: plaintext,
+            isOutgoing: false,
+            senderId: payload.senderId,
+            createdAt: payload.createdAt ?? new Date().toISOString(),
+            status: 'sent'
+          });
         });
-      });
+      } catch (error) {
+        console.error('SignalR conversation join failed', error);
+      }
     })();
 
     return () => {
-      signalR.current.stop();
+      cancelled = true;
+      void signalR.current.stop();
     };
-  }, [conversationId, currentUserId, session, addMessage]);
+  }, [conversationId, session?.jwtToken, addMessage]);
 
   useEffect(() => {
     const rows = messagesData?.getMessagesAsync;
-    // Do not gate on messagesError: a failed first fetch (e.g. before JWT was in storage) can leave
-    // error set until a later refetch succeeds; we still apply rows whenever the query returns data.
     if (messagesLoading || !Array.isArray(rows) || !session?.privateKey) {
       return;
     }
@@ -232,6 +257,7 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
           id: payload.id,
           content: plaintext,
           isOutgoing,
+          senderId: payload.senderId,
           createdAt: payload.createdAt,
           status: isOutgoing ? 'sent' : undefined
         });
@@ -241,8 +267,6 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
         return;
       }
 
-      // Merge full previous state so we never drop received/cached rows when the server returns [] or
-      // a transient partial result; server rows win by id. Only the backend expiry filter removes messages.
       setMessages((prev) => mergeById(decrypted, prev));
     })();
 
@@ -262,100 +286,151 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     navigation.setOptions({ title });
   }, [conversationData, currentUserId, navigation]);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View className="flex-row items-center pr-1">
+          <Pressable
+            accessibilityLabel="Play game in chat"
+            className="p-2"
+            onPress={() => setGameModalOpen(true)}
+          >
+            <Ionicons name="game-controller-outline" size={22} color={palette.text} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Voice call"
+            className="p-2"
+            onPress={() => navigation.navigate('Call', { conversationId, media: 'audio', callRole: 'caller' })}
+          >
+            <Ionicons name="call" size={22} color={palette.text} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Video call"
+            className="p-2"
+            onPress={() => navigation.navigate('Call', { conversationId, media: 'video', callRole: 'caller' })}
+          >
+            <Ionicons name="videocam" size={22} color={palette.text} />
+          </Pressable>
+        </View>
+      )
+    });
+  }, [conversationId, navigation, palette.text]);
+
   useEffect(() => {
     if (messages.length > 0) {
       flatListRef.current?.scrollToEnd({ animated: true });
     }
   }, [messages.length]);
 
+  const sendPlaintextMessage = useCallback(
+    async (plain: string) => {
+      const trimmed = plain.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      const current = await sessionService.getSession();
+      if (!current) {
+        return;
+      }
+
+      const recipient = conversationData?.conversationById?.participants.find(
+        (p: any) => !sameUserId(p.userId, currentUserId)
+      );
+
+      if (!normalizeUserId(currentUserId)) {
+        console.error('Missing current user id for send.');
+        return;
+      }
+
+      if (!recipient?.publicKey) {
+        console.error('Missing recipient public key for conversation.');
+        return;
+      }
+
+      const encrypted = encryptionService.encryptMessage(trimmed, recipient.publicKey, current.privateKey);
+      const optimisticId = `${Date.now()}-${Math.random()}`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: optimisticId,
+          content: trimmed,
+          isOutgoing: true,
+          senderId: currentUserId ?? undefined,
+          createdAt: new Date().toISOString(),
+          status: 'sending'
+        }
+      ]);
+
+      try {
+        const { data } = await client.mutate({
+          mutation: SEND_MESSAGE,
+          variables: {
+            input: {
+              conversationId,
+              encryptedContent: encrypted.ciphertext,
+              encryptedKey: encrypted.encryptedKey,
+              nonce: encrypted.nonce,
+              tag: encrypted.tag,
+              signature: encrypted.signature,
+              expiryTime: expiry > 0 ? new Date(Date.now() + expiry * 1000).toISOString() : null
+            }
+          }
+        });
+
+        const serverMessage = data?.sendMessage;
+        if (serverMessage?.id) {
+          await sentMessagePlaintextService.set(serverMessage.id, trimmed);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === optimisticId
+                    ? {
+                    ...msg,
+                    id: serverMessage.id,
+                    createdAt: serverMessage.createdAt ?? msg.createdAt,
+                    status: 'sent',
+                    senderId: currentUserId ?? undefined
+                  }
+                : msg
+            )
+          );
+        }
+      } catch (error) {
+        console.error('Send message failed', error);
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === optimisticId ? { ...msg, status: 'sent' } : msg))
+        );
+      }
+    },
+    [client, conversationData?.conversationById?.participants, conversationId, currentUserId, expiry]
+  );
+
   const handleSend = async () => {
     if (!input.trim()) {
       return;
     }
-
-    const current = await sessionService.getSession();
-    if (!current) {
-      return;
-    }
-
-    const recipient = conversationData?.conversationById?.participants.find(
-      (p: any) => !sameUserId(p.userId, currentUserId)
-    );
-
-    if (!normalizeUserId(currentUserId)) {
-      console.error('Missing current user id for send.');
-      return;
-    }
-
-    if (!recipient?.publicKey) {
-      console.error('Missing recipient public key for conversation.');
-      return;
-    }
-
-    const plain = input.trim();
-    const encrypted = encryptionService.encryptMessage(plain, recipient.publicKey, current.privateKey);
-    const optimisticId = `${Date.now()}-${Math.random()}`;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: optimisticId,
-        content: plain,
-        isOutgoing: true,
-        createdAt: new Date().toISOString(),
-        status: 'sending'
-      }
-    ]);
+    const next = input.trim();
     setInput('');
-
-    try {
-      const { data } = await client.mutate({
-        mutation: SEND_MESSAGE,
-        variables: {
-          input: {
-            conversationId,
-            encryptedContent: encrypted.ciphertext,
-            encryptedKey: encrypted.encryptedKey,
-            nonce: encrypted.nonce,
-            tag: encrypted.tag,
-            signature: encrypted.signature,
-            expiryTime: expiry > 0 ? new Date(Date.now() + expiry * 1000).toISOString() : null
-          }
-        }
-      });
-
-      const serverMessage = data?.sendMessage;
-      if (serverMessage?.id) {
-        await sentMessagePlaintextService.set(serverMessage.id, plain);
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === optimisticId
-              ? {
-                  ...msg,
-                  id: serverMessage.id,
-                  createdAt: serverMessage.createdAt ?? msg.createdAt,
-                  status: 'sent'
-                }
-              : msg
-          )
-        );
-      }
-    } catch (error) {
-      console.error('Send message failed', error);
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === optimisticId ? { ...msg, status: 'sent' } : msg))
-      );
-    }
+    await sendPlaintextMessage(next);
   };
 
   return (
     <View className="flex-1 p-4" style={{ backgroundColor: palette.background }}>
+      <TicTacToeChatModal
+        visible={gameModalOpen}
+        onClose={() => setGameModalOpen(false)}
+        conversationId={conversationId}
+        messages={messages}
+        currentUserId={currentUserId ?? undefined}
+        sendPlaintext={sendPlaintextMessage}
+      />
       <FlatList
         ref={flatListRef}
         data={messages}
         keyExtractor={(msg) => msg.id}
         renderItem={({ item }) => (
           <ChatBubble
-            text={item.content}
+            text={bubbleTextForMessage(item)}
             isOutgoing={item.isOutgoing}
             timestamp={new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             status={item.status}
@@ -408,36 +483,5 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => {
   const { conversationId } = route.params;
-  const { palette } = useTheme();
-
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <View className="flex-row items-center pr-1">
-          <Pressable
-            accessibilityLabel="Voice call"
-            className="p-2"
-            onPress={() => navigation.navigate('Call', { conversationId, media: 'audio', callRole: 'caller' })}
-          >
-            <Ionicons name="call" size={22} color={palette.text} />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Video call"
-            className="p-2"
-            onPress={() => navigation.navigate('Call', { conversationId, media: 'video', callRole: 'caller' })}
-          >
-            <Ionicons name="videocam" size={22} color={palette.text} />
-          </Pressable>
-        </View>
-      )
-    });
-  }, [conversationId, navigation, palette.text]);
-
-  return (
-    <ChatScreenContent
-      key={conversationId}
-      conversationId={conversationId}
-      navigation={navigation}
-    />
-  );
+  return <ChatScreenContent key={conversationId} conversationId={conversationId} navigation={navigation} />;
 };

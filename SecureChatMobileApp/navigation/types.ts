@@ -16,4 +16,6 @@ export type RootStackParamList = {
   Help: undefined;
   ClearData: undefined;
   Notifications: undefined;
+  Games: undefined;
+  TicTacToe: undefined;
 };

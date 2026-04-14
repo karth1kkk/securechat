@@ -6,6 +6,7 @@ export type PersistedThreadMessage = {
   id: string;
   content: string;
   isOutgoing: boolean;
+  senderId?: string;
   createdAt: string;
   status?: 'sending' | 'sent';
 };

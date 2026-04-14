@@ -79,6 +79,11 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
         onPress: () => navigation.navigate('Donate')
       },
       {
+        label: 'Games',
+        icon: 'grid',
+        onPress: () => navigation.navigate('Games')
+      },
+      {
         label: 'Invite a Friend',
         icon: 'user-plus',
         onPress: handleShareId

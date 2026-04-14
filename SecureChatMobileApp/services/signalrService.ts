@@ -25,6 +25,14 @@ type IncomingMessageDto = {
   CreatedAt?: string;
 };
 
+export type RealtimeEncryptedPayload = EncryptedMessage & {
+  id: string;
+  senderId: string;
+  /** ISO time from server — use for ordering (don't use client clock). */
+  createdAt?: string;
+  conversationId?: string;
+};
+
 const normalize = (value: string | undefined | null) => {
   if (typeof value !== 'string') {
     return undefined;
@@ -70,8 +78,17 @@ export class SignalRService {
     await this.connection.invoke('JoinConversation', conversationId);
   }
 
-  onEncryptedMessage(callback: (message: EncryptedMessage & { id: string; senderId: string }) => void) {
-    this.connection?.on('ReceiveEncryptedMessage', (dto: IncomingMessageDto) => {
+  /**
+   * Subscribes to ReceiveEncryptedMessage. Re-registers the handler (previous handler
+   * is removed) so React effects do not stack duplicate listeners on the same connection.
+   */
+  onEncryptedMessage(callback: (message: RealtimeEncryptedPayload) => void) {
+    if (!this.connection) {
+      return;
+    }
+
+    this.connection.off('ReceiveEncryptedMessage');
+    this.connection.on('ReceiveEncryptedMessage', (dto: IncomingMessageDto) => {
       const ciphertext = pickFirst(dto.encryptedContent, dto.EncryptedContent);
       const encryptedKey = pickFirst(dto.encryptedKey, dto.EncryptedKey);
       const nonce = pickFirst(dto.nonce, dto.Nonce);
@@ -84,6 +101,9 @@ export class SignalRService {
         return;
       }
 
+      const createdAt = pickFirst(dto.createdAt, dto.CreatedAt);
+      const conversationId = pickFirst(dto.conversationId, dto.ConversationId);
+
       callback({
         id,
         senderId,
@@ -91,7 +111,9 @@ export class SignalRService {
         encryptedKey,
         nonce,
         tag,
-        signature: pickFirst(dto.signature ?? undefined, dto.Signature ?? undefined)
+        signature: pickFirst(dto.signature ?? undefined, dto.Signature ?? undefined),
+        createdAt,
+        conversationId
       });
     });
   }

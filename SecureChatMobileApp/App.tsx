@@ -23,6 +23,8 @@ import { RecoveryPasswordScreen } from './screens/RecoveryPasswordScreen';
 import { HelpScreen } from './screens/HelpScreen';
 import { ClearDataScreen } from './screens/ClearDataScreen';
 import { NotificationsScreen } from './screens/NotificationsScreen';
+import { GamesScreen } from './screens/GamesScreen';
+import { TicTacToeScreen } from './screens/TicTacToeScreen';
 import { sessionService, SessionRecord } from './services/sessionService';
 import { navigationRef } from './navigation/navigationRef';
 import { IncomingCallHandler } from './components/IncomingCallHandler';
@@ -199,6 +201,8 @@ const SecureChatApp: React.FC = () => {
           <Stack.Screen name="Help" component={HelpScreen} options={{ title: 'Help' }} />
           <Stack.Screen name="ClearData" component={ClearDataScreen} options={{ title: 'Clear data' }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+          <Stack.Screen name="Games" component={GamesScreen} options={{ title: 'Games' }} />
+          <Stack.Screen name="TicTacToe" component={TicTacToeScreen} options={{ title: 'Tic-tac-toe' }} />
           </Stack.Navigator>
           <IncomingCallHandler
             jwtToken={activeSession?.jwtToken ?? null}
