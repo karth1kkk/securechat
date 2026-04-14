@@ -105,6 +105,26 @@ public sealed class ConversationService : IConversationService
         return conversation.Participants.Any(p => p.UserId == userId && p.IsAccepted);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetOtherAcceptedParticipantIdsAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var conversation = await _conversationRepository.GetByIdAsync(conversationId, cancellationToken);
+        if (conversation == null)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        if (!conversation.Participants.Any(p => p.UserId == userId && p.IsAccepted))
+        {
+            return Array.Empty<Guid>();
+        }
+
+        return conversation.Participants
+            .Where(p => p.UserId != userId && p.IsAccepted)
+            .Select(p => p.UserId)
+            .Distinct()
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<ConversationDto>> GetConversationsAsync(Guid userId, bool isAccepted, CancellationToken cancellationToken = default)
     {
         var conversations = await _conversationRepository.GetByUserAsync(userId, isAccepted, cancellationToken);

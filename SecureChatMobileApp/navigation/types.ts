@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   ChatList: undefined;
   Chat: { conversationId: string };
-  Call: { conversationId: string; media: 'audio' | 'video' };
+  Call: { conversationId: string; media: 'audio' | 'video'; callRole?: 'caller' | 'callee' };
   NewChat: { prefilledSessionId?: string } | undefined;
   Settings: undefined;
   SecurityCenter: undefined;

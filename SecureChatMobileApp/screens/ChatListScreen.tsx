@@ -164,7 +164,12 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ navigation }) =>
           accessibilityLabel="Open settings"
         >
           {profilePhotoUri ? (
-            <Image source={{ uri: profilePhotoUri }} className="h-full w-full" resizeMode="cover" />
+            <Image
+              source={{ uri: profilePhotoUri }}
+              className="h-full w-full"
+              resizeMode="cover"
+              onError={() => setProfilePhotoUri(null)}
+            />
           ) : (
             <Text className="font-bold" style={{ color: palette.text }}>
               {initial}

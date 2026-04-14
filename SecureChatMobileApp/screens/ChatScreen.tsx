@@ -417,14 +417,14 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ route, navigation }) => 
           <Pressable
             accessibilityLabel="Voice call"
             className="p-2"
-            onPress={() => navigation.navigate('Call', { conversationId, media: 'audio' })}
+            onPress={() => navigation.navigate('Call', { conversationId, media: 'audio', callRole: 'caller' })}
           >
             <Ionicons name="call" size={22} color={palette.text} />
           </Pressable>
           <Pressable
             accessibilityLabel="Video call"
             className="p-2"
-            onPress={() => navigation.navigate('Call', { conversationId, media: 'video' })}
+            onPress={() => navigation.navigate('Call', { conversationId, media: 'video', callRole: 'caller' })}
           >
             <Ionicons name="videocam" size={22} color={palette.text} />
           </Pressable>

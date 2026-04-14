@@ -24,6 +24,8 @@ import { HelpScreen } from './screens/HelpScreen';
 import { ClearDataScreen } from './screens/ClearDataScreen';
 import { NotificationsScreen } from './screens/NotificationsScreen';
 import { sessionService, SessionRecord } from './services/sessionService';
+import { navigationRef } from './navigation/navigationRef';
+import { IncomingCallHandler } from './components/IncomingCallHandler';
 import { pinService } from './services/pinService';
 import { PinLock } from './components/PinLock';
 import { RootStackParamList } from './navigation/types';
@@ -45,6 +47,7 @@ const SecureChatApp: React.FC = () => {
   const [locked, setLocked] = useState(true);
   const [hasPin, setHasPin] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [activeSession, setActiveSession] = useState<SessionRecord | null>(null);
   const { palette, navigationTheme } = useTheme();
 
   const ensureRemoteRegistration = useCallback(async (session: SessionRecord) => {
@@ -83,7 +86,8 @@ const SecureChatApp: React.FC = () => {
     setSessionReady(false);
     try {
       const session = await sessionService.ensureSession();
-      await ensureRemoteRegistration(session);
+      const registered = await ensureRemoteRegistration(session);
+      setActiveSession(registered);
       setSessionReady(true);
       const storedPin = await pinService.getPin();
       setHasPin(!!storedPin);
@@ -150,7 +154,7 @@ const SecureChatApp: React.FC = () => {
   return (
     <View style={rootViewStyle}>
       <View style={{ flex: 1 }}>
-        <NavigationContainer theme={navigationTheme}>
+        <NavigationContainer ref={navigationRef} theme={navigationTheme}>
           <StatusBar style={palette.statusBarStyle} />
           <Stack.Navigator
           screenOptions={{
@@ -196,6 +200,11 @@ const SecureChatApp: React.FC = () => {
           <Stack.Screen name="ClearData" component={ClearDataScreen} options={{ title: 'Clear data' }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
           </Stack.Navigator>
+          <IncomingCallHandler
+            jwtToken={activeSession?.jwtToken ?? null}
+            selfUserId={activeSession?.userId ?? null}
+            pinLocked={locked}
+          />
         </NavigationContainer>
       </View>
       <PinLock onUnlock={handleUnlock} onCreate={handleCreate} hasPin={hasPin} visible={locked} />

@@ -13,6 +13,9 @@ public interface IConversationService
     Task<ConversationDto> CreateConversationRequestWithSessionIdAsync(Guid requesterId, string targetSessionId, CancellationToken cancellationToken = default);
     Task<bool> IsParticipantAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Other accepted participants (excluding <paramref name="userId"/>).</summary>
+    Task<IReadOnlyList<Guid>> GetOtherAcceptedParticipantIdsAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ConversationDto>> GetConversationsAsync(Guid userId, bool isAccepted, CancellationToken cancellationToken = default);
     Task AcceptConversationRequestAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default);
     Task DeclineConversationRequestAsync(Guid conversationId, Guid userId, CancellationToken cancellationToken = default);

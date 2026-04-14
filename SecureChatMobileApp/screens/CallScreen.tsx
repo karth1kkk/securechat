@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { createElement } from 'react';
 import { RootStackParamList } from '../navigation/types';
 import { sessionService } from '../services/sessionService';
-import { CallSignalRService } from '../services/callSignalRService';
+import { getCallSignalService } from '../services/callSignalRService';
 import { useTheme } from '../theme/ThemeContext';
 import { buildRtcConfiguration } from '../config';
 
@@ -48,21 +48,24 @@ const loadWebRtc = (): WrtcModule => {
   }
 };
 
-const shouldInitiate = (selfId: string, peerId: string) => selfId.localeCompare(peerId) > 0;
-
 export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { conversationId, media } = route.params;
+  const { conversationId, media, callRole = 'caller' } = route.params;
   const { palette } = useTheme();
-  const [status, setStatus] = useState<'connecting' | 'active' | 'ended' | 'error'>('connecting');
+  const [status, setStatus] = useState<'ringing' | 'connecting' | 'active' | 'ended' | 'error'>(
+    callRole === 'caller' ? 'ringing' : 'connecting'
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [remoteStreamUrl, setRemoteStreamUrl] = useState<string | null>(null);
 
-  const signalR = useRef(new CallSignalRService());
+  const signalR = getCallSignalService();
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const wrtcRef = useRef<WrtcModule | null>(null);
   const makingOfferRef = useRef(false);
   const selfIdRef = useRef<string | null>(null);
+  const callRoleRef = useRef(callRole);
+  callRoleRef.current = callRole;
+  const exitedCleanlyRef = useRef(false);
 
   const cleanupMedia = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -73,25 +76,27 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
   }, []);
 
   const hangUp = useCallback(async () => {
+    exitedCleanlyRef.current = true;
     try {
-      await signalR.current.sendSignal(conversationId, { type: 'hangup', callId: conversationId });
+      await signalR.sendSignal(conversationId, { type: 'hangup', callId: conversationId });
     } catch {
       /* ignore */
     }
     cleanupMedia();
-    await signalR.current.stop();
+    await signalR.leaveCall(conversationId);
     setStatus('ended');
     navigation.goBack();
   }, [cleanupMedia, conversationId, navigation]);
 
   useEffect(() => {
-    let presenceTimer: ReturnType<typeof setInterval> | null = null;
+    exitedCleanlyRef.current = false;
     let cancelled = false;
+    let offReceive: (() => void) | undefined;
 
     const setupIceHandlers = (pc: RTCPeerConnection) => {
       pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
         if (event.candidate) {
-          void signalR.current.sendSignal(conversationId, {
+          void signalR.sendSignal(conversationId, {
             type: 'ice',
             candidateJson: JSON.stringify(event.candidate.toJSON()),
             callId: conversationId
@@ -110,7 +115,6 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
             el.srcObject = remoteStream;
           }
         } else if (Platform.OS !== 'web') {
-          // react-native-webrtc MediaStream
           const url = (remoteStream as unknown as { toURL: () => string }).toURL();
           setRemoteStreamUrl(url);
         }
@@ -141,6 +145,30 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
       });
       setupIceHandlers(pc);
       return pc;
+    };
+
+    const sendOffer = async (wrtcLocal: WrtcModule) => {
+      if (makingOfferRef.current) {
+        return;
+      }
+      makingOfferRef.current = true;
+      try {
+        const pc = await ensurePc(wrtcLocal);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await signalR.sendSignal(conversationId, {
+          type: 'offer',
+          sdp: offer.sdp ?? '',
+          callId: conversationId
+        });
+        setStatus('active');
+      } catch (e) {
+        console.error('sendOffer failed', e);
+        setErrorMessage('Unable to start media.');
+        setStatus('error');
+      } finally {
+        makingOfferRef.current = false;
+      }
     };
 
     (async () => {
@@ -182,74 +210,72 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
         const wrtc = loadWebRtc();
         wrtcRef.current = wrtc;
 
-        await signalR.current.start(session.jwtToken);
+        await signalR.start(session.jwtToken);
 
-        const sendOffer = async (wrtcLocal: WrtcModule) => {
-          if (makingOfferRef.current) {
-            return;
-          }
-          makingOfferRef.current = true;
-          try {
-            const pc = await ensurePc(wrtcLocal);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            await signalR.current.sendSignal(conversationId, {
-              type: 'offer',
-              sdp: offer.sdp ?? '',
-              callId: conversationId
-            });
-            setStatus('active');
-          } catch (e) {
-            console.error('sendOffer failed', e);
-            setErrorMessage('Unable to start media.');
-            setStatus('error');
-          } finally {
-            makingOfferRef.current = false;
-          }
-        };
-
-        signalR.current.onReceiveSignal(async (sig) => {
+        offReceive = signalR.onReceiveSignal(async (sig) => {
           if (cancelled) {
             return;
           }
-          if (sig.type === 'hangup') {
+          const conv = sig.conversationId ?? sig.callId;
+          if (conv && conv !== conversationId) {
+            return;
+          }
+
+          const t = (sig.type ?? '').toLowerCase();
+
+          if (t === 'hangup') {
+            exitedCleanlyRef.current = true;
             cleanupMedia();
+            void signalR.leaveCall(conversationId);
             setStatus('ended');
+            navigation.goBack();
+            return;
+          }
+
+          if (t === 'decline' && callRoleRef.current === 'caller') {
+            exitedCleanlyRef.current = true;
+            setErrorMessage('Call declined.');
+            setStatus('ended');
+            cleanupMedia();
+            await signalR.leaveCall(conversationId);
             navigation.goBack();
             return;
           }
 
           const wrtcLocal = wrtcRef.current ?? loadWebRtc();
 
-          if (sig.type === 'present' || sig.type === 'ready') {
-            if (selfIdRef.current && shouldInitiate(selfIdRef.current, sig.senderId)) {
-              await sendOffer(wrtcLocal);
-            }
-            return;
-          }
-
           try {
-            if (sig.type === 'offer' && sig.sdp) {
+            if (
+              t === 'accepted' &&
+              callRoleRef.current === 'caller' &&
+              (sig.senderId ?? '').trim().toLowerCase().replace(/-/g, '') !==
+                (selfIdRef.current ?? '').trim().toLowerCase().replace(/-/g, '')
+            ) {
+              await sendOffer(wrtcLocal);
+              return;
+            }
+
+            if (t === 'offer' && sig.sdp) {
               const pc = await ensurePc(wrtcLocal);
               await pc.setRemoteDescription(
                 new wrtcLocal.RTCSessionDescription({ type: 'offer', sdp: sig.sdp })
               );
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
-              await signalR.current.sendSignal(conversationId, {
+              await signalR.sendSignal(conversationId, {
                 type: 'answer',
                 sdp: answer.sdp ?? '',
                 callId: conversationId
               });
               setStatus('active');
-            } else if (sig.type === 'answer' && sig.sdp) {
+            } else if (t === 'answer' && sig.sdp) {
               const pc = pcRef.current;
               if (pc) {
                 await pc.setRemoteDescription(
                   new wrtcLocal.RTCSessionDescription({ type: 'answer', sdp: sig.sdp })
                 );
               }
-            } else if (sig.type === 'ice' && sig.candidateJson) {
+            } else if (t === 'ice' && sig.candidateJson) {
               const pc = pcRef.current;
               if (pc) {
                 const parsed = JSON.parse(sig.candidateJson);
@@ -263,20 +289,21 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
           }
         });
 
-        signalR.current.onPeerJoined((userId) => {
-          if (cancelled || !session.userId) {
-            return;
-          }
-          if (shouldInitiate(session.userId, userId)) {
-            void sendOffer(wrtc);
-          }
-        });
+        await signalR.joinCall(conversationId);
 
-        await signalR.current.joinCall(conversationId);
-
-        presenceTimer = setInterval(() => {
-          void signalR.current.sendSignal(conversationId, { type: 'present', callId: conversationId });
-        }, 2000);
+        if (callRole === 'caller') {
+          await signalR.sendSignal(conversationId, {
+            type: 'invite',
+            media,
+            callId: conversationId
+          });
+        } else {
+          setStatus('connecting');
+          await signalR.sendSignal(conversationId, {
+            type: 'accepted',
+            callId: conversationId
+          });
+        }
       } catch (e) {
         console.error('Call setup failed', e);
         setErrorMessage('Unable to connect call signaling.');
@@ -286,17 +313,26 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
 
     return () => {
       cancelled = true;
-      if (presenceTimer) {
-        clearInterval(presenceTimer);
+      offReceive?.();
+      if (!exitedCleanlyRef.current) {
+        void signalR.sendSignal(conversationId, { type: 'hangup', callId: conversationId }).catch(() => undefined);
       }
-      signalR.current.offHandlers();
       cleanupMedia();
-      void signalR.current.stop();
+      void signalR.leaveCall(conversationId);
     };
-  }, [cleanupMedia, conversationId, media, navigation]);
+  }, [cleanupMedia, conversationId, media, navigation, callRole]);
 
   const wrtc = wrtcRef.current ?? loadWebRtc();
   const RTCView = wrtc.RTCView;
+
+  const statusLabel =
+    status === 'ringing'
+      ? 'Ringing…'
+      : status === 'connecting'
+        ? 'Connecting…'
+        : status === 'active'
+          ? ''
+          : '';
 
   return (
     <View className="flex-1 px-4 pt-4" style={{ backgroundColor: palette.background }}>
@@ -307,11 +343,11 @@ export const CallScreen: React.FC<Props> = ({ route, navigation }) => {
         Conversation {conversationId.slice(0, 8)}…
       </Text>
 
-      {status === 'connecting' && !errorMessage && (
+      {(status === 'connecting' || status === 'ringing') && !errorMessage && (
         <View className="mb-6 items-center">
           <ActivityIndicator size="large" color={palette.action} />
           <Text className="mt-2" style={{ color: palette.muted }}>
-            Connecting…
+            {statusLabel}
           </Text>
         </View>
       )}
