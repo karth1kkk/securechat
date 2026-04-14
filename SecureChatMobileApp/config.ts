@@ -35,11 +35,13 @@ const GRAPHQL_URL = (
 const SIGNALR_URL = `${API_URL}/hubs/messaging`;
 const CALL_HUB_URL = `${API_URL}/hubs/call`;
 
-if (typeof __DEV__ !== 'undefined' && __DEV__ && /localhost|127\.0\.0\.1/i.test(API_URL)) {
-  console.warn(
-    '[SecureChat] API_URL points to this machine (localhost). Production builds must set EXPO_PUBLIC_API_URL to your deployed API (HTTPS). ' +
-      'Calls and GraphQL will fail on real devices when hosted.'
-  );
+if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  console.log('[SecureChat] API_URL=', API_URL, '| GRAPHQL_URL=', GRAPHQL_URL, '| CALL_HUB_URL=', CALL_HUB_URL);
+  if (/localhost|127\.0\.0\.1/i.test(API_URL)) {
+    console.warn(
+      '[SecureChat] API_URL is localhost. Set EXPO_PUBLIC_API_URL / EXPO_PUBLIC_GRAPHQL_URL in .env to your HTTPS API, restart Metro with -c, rebuild release builds.'
+    );
+  }
 }
 
 /** Comma-separated ICE server URLs (each becomes one `urls` entry). */
