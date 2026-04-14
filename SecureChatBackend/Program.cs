@@ -209,6 +209,10 @@ builder.Services.AddCors(options =>
                 // Vercel preview & production (*.vercel.app); add Cors:AllowedOrigins for other web hosts.
                 if (uri.Scheme == "https" && uri.Host.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase))
                     return true;
+                if (uri.Scheme == "https" && uri.Host.EndsWith(".netlify.app", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (uri.Scheme == "https" && uri.Host.EndsWith(".expo.dev", StringComparison.OrdinalIgnoreCase))
+                    return true;
                 return false;
             })
             .AllowAnyHeader()
@@ -235,8 +239,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGraphQL().RequireCors("default");
-app.MapHub<MessagingHub>("/hubs/messaging");
-app.MapHub<CallHub>("/hubs/call");
+// Browsers need CORS on hub endpoints too (negotiate + WebSockets); without this, hosted web apps on another origin fail silently or show odd errors.
+app.MapHub<MessagingHub>("/hubs/messaging").RequireCors("default");
+app.MapHub<CallHub>("/hubs/call").RequireCors("default");
 app.MapGet("/health", () => Results.Text("ok", "text/plain"));
 
 app.Run();
