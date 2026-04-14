@@ -243,5 +243,21 @@ app.MapGraphQL().RequireCors("default");
 app.MapHub<MessagingHub>("/hubs/messaging").RequireCors("default");
 app.MapHub<CallHub>("/hubs/call").RequireCors("default");
 app.MapGet("/health", () => Results.Text("ok", "text/plain"));
+// Browsers GET / and expect something; there is no SPA here — without this, the root returns 404 and looks "down".
+app.MapGet("/", () =>
+    Results.Text(
+        """
+        SecureChat API is running.
+
+        This host only exposes an API (no website at /).
+
+        • POST /graphql — GraphQL (Hot Chocolate; Banana Cake Pop UI may be at /graphql depending on config)
+        • GET /health — Health check
+        • /hubs/messaging — SignalR (realtime chat)
+        • /hubs/call — SignalR (call signaling)
+
+        Use the SecureChat mobile/web app with EXPO_PUBLIC_API_URL / API_URL pointing at this base URL.
+        """.Trim(),
+        "text/plain; charset=utf-8"));
 
 app.Run();
