@@ -71,9 +71,20 @@ Store sensitive values in **AWS Secrets Manager** or **SSM Parameter Store**, an
 - `JwtSettings__Issuer` and `JwtSettings__Audience` — match what you use in production (defaults exist in appsettings).
 - `Database__UseInMemory` — set to `false` in production so the app uses Postgres.
 - `Cors__AllowedOrigins__0`, `Cors__AllowedOrigins__1`, … — origins allowed to call GraphQL and SignalR with credentials (e.g. your Expo web origin, or the HTTPS origin of a hosted dev client). Add every origin the mobile or web app uses.
-- `SecureChatNetwork__ApiRegion` — optional; otherwise **`AWS_REGION`** is read at runtime for display on the **SecureChat Network** screen.
-- `SecureChatNetwork__DeploymentId` — optional; otherwise **`SECURECHAT_DEPLOYMENT_LABEL`** can be set (e.g. ECS service name).
+- `SecureChatNetwork__ApiRegion` — optional; otherwise **`AWS_REGION`** or **`AWS_DEFAULT_REGION`** is used for the **SecureChat Network** screen (plain EC2 often needs one of these set explicitly).
+- `SecureChatNetwork__DeploymentId` — optional; otherwise **`SECURECHAT_DEPLOYMENT_LABEL`**, then **`EC2_INSTANCE_ID`**, then (on ECS) the task ARN from the v4 metadata endpoint are used.
 - Optional JSON for path hops: override `SecureChatNetwork__Nodes` via environment or a mounted `appsettings.Production.json` if you prefer not to bake config into the image.
+- **`ForwardedHeaders__Enabled`** — defaults to **on** when `ASPNETCORE_ENVIRONMENT` is `Production` or `Staging`. Keeps **`X-Forwarded-Proto`** / **`X-Forwarded-For`** from the **ALB** so `Request.Scheme` is **https** and JWT validation behaves correctly. Turn off only for local dev or if nothing sets forwarded headers. **Restrict the instance security group** so only the ALB can reach the app port.
+
+### 2b. EC2 + Docker behind Application Load Balancer
+
+Repo templates for this layout live under [`deploy/aws`](deploy/aws):
+
+- [`env.production.example`](deploy/aws/env.production.example) — environment variables for `/etc/securechat.env`.
+- [`user-data-bootstrap.sh`](deploy/aws/user-data-bootstrap.sh) — appends **`EC2_INSTANCE_ID`** and **`AWS_REGION`** from **IMDSv2** (for Path / SecureChat Network metadata).
+- [`systemd/securechat-docker.service`](deploy/aws/systemd/securechat-docker.service) — example **systemd** unit; replace **`__ECR_IMAGE__`** with your **ECR** image URI after `docker build` / push from [`SecureChatBackend/Dockerfile`](SecureChatBackend/Dockerfile).
+
+Point an **ALB** target group at **EC2:8080**, health check **`GET /health`**, **HTTPS** listener with **ACM**, and enable **WebSockets** for SignalR. **Route 53** can alias your API hostname to the ALB.
 
 ### 3. Container image (ECS Fargate + ECR + ALB)
 
@@ -110,3 +121,35 @@ Store sensitive values in **AWS Secrets Manager** or **SSM Parameter Store**, an
 - **CloudFront** in front of ALB for static edge caching (less critical for GraphQL/SignalR than for static assets).
 - **Private subnets** for ECS tasks with only ALB in public subnets.
 - **Rotate JWT signing keys** with a planned cutover (not implemented in this repo by default).
+
+---
+
+## Staging: AWS backend + Vercel frontend
+
+Use this when **production** stays on **Heroku + Vercel (`main`)** and **staging** uses **AWS (API) + Vercel (web)** from the **`staging`** branch.
+
+### Backend (AWS)
+
+1. Create a **separate** RDS instance (or database) for staging so you never point previews at production data.
+2. Build and run the same container as production ([`SecureChatBackend/Dockerfile`](SecureChatBackend/Dockerfile)): **EC2 + ALB** using [`deploy/aws`](deploy/aws), or **ECS Fargate + ALB** as in **§3** below in this section.
+3. On the ECS task, set **`ASPNETCORE_ENVIRONMENT=Staging`**. That loads [`appsettings.Staging.json`](SecureChatBackend/appsettings.Staging.json) (staging labels on the SecureChat Network screen, GraphQL exception details enabled for easier debugging) plus the usual env-based secrets:
+   - `ConnectionStrings__DefaultConnection`, `JwtSettings__Secret`, `Database__UseInMemory=false`, `Cors__AllowedOrigins__*` as needed.
+4. **CORS**: The API already allows HTTPS origins on **`*.vercel.app`** (and localhost) in code, so preview and staging Vercel URLs work without listing every hash-based preview URL. Add explicit `Cors:AllowedOrigins` entries for any custom staging domain.
+5. **CI**: [`.github/workflows/deploy-backend-staging.yml`](.github/workflows/deploy-backend-staging.yml) builds the image, pushes to **ECR** as `:<git-sha>`, registers a new task definition revision, and updates the ECS service. Add GitHub Actions secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `STAGING_ECR_REPOSITORY`, `STAGING_ECS_CLUSTER`, `STAGING_ECS_SERVICE`. The workflow assumes the **first** container in the task definition is the API image to replace.
+
+### Frontend (Vercel)
+
+1. **Option A — dedicated staging site:** Create a second Vercel project for the same repo, set **Production Branch** to **`staging`**, root directory **`SecureChatMobileApp`**, build command `npm run build`, output **`dist`** (same as [`vercel.json`](SecureChatMobileApp/vercel.json)).
+2. **Option B — previews only:** Keep one project; every push to `staging` gets a **Preview** URL automatically. Set **Preview** environment variables to the staging API (below).
+3. In the Vercel project (Production and/or Preview), set:
+   - **`EXPO_PUBLIC_API_URL`** — `https://<your-staging-api-host>` (no trailing slash)
+   - **`EXPO_PUBLIC_GRAPHQL_URL`** — `https://<your-staging-api-host>/graphql`  
+   Metro inlines these at build time; redeploy after changing them.
+
+Copy [`SecureChatMobileApp/.env.staging.example`](SecureChatMobileApp/.env.staging.example) when testing a local web export against staging.
+
+### End-to-end checklist
+
+- [ ] Staging API HTTPS URL works: `GET /health` → `ok`
+- [ ] Vercel build uses staging `EXPO_PUBLIC_*` URLs
+- [ ] Login + GraphQL + SignalR from the deployed web app succeed (ALB supports WebSockets for `/hubs/*`)

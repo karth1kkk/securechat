@@ -1,0 +1,70 @@
+# Deploy SecureChatBackend to AWS when `staging` changes.
+#
+# One-time AWS: ECR repo, ECS Fargate service (port 8080, health GET /health), RDS, secrets on the task.
+# Set on the ECS task: ASPNETCORE_ENVIRONMENT=Staging (loads appsettings.Staging.json + base settings).
+#
+# GitHub → Settings → Secrets and variables → Actions:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+#   STAGING_ECR_REPOSITORY   (e.g. securechat-api-staging)
+#   STAGING_ECS_CLUSTER      (e.g. securechat-staging)
+#   STAGING_ECS_SERVICE      (e.g. api)
+#
+# IAM: allow ecr:* for push, ecs:Describe*, ecs:RegisterTaskDefinition, ecs:UpdateService, iam:PassRole
+# if your task execution role is restricted.
+
+name: Deploy backend (staging → AWS)
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - "SecureChatBackend/**"
+      - ".github/workflows/deploy-backend-staging.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, push image, update ECS service
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ secrets.STAGING_ECR_REPOSITORY }}
+          CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
+          SERVICE: ${{ secrets.STAGING_ECS_SERVICE }}
+        run: |
+          set -eux
+          test -n "${REGISTRY}" && test -n "${REPO}" && test -n "${CLUSTER}" && test -n "${SERVICE}"
+          IMAGE_URI="${REGISTRY}/${REPO}:${GITHUB_SHA}"
+          docker build -t "${IMAGE_URI}" SecureChatBackend
+          docker push "${IMAGE_URI}"
+
+          TASK_ARN=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TASK_ARN" --query 'taskDefinition' > raw.json
+          jq --arg IMG "$IMAGE_URI" '
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+            | .containerDefinitions[0].image = $IMG
+          ' raw.json > taskdef.json
+
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json file://taskdef.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "$NEW_ARN" --force-new-deployment
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"

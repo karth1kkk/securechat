@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using SecureChatBackend.Application.Interfaces;
 using SecureChatBackend.Application.Services;
 using SecureChatBackend.Configuration;
+using SecureChatBackend.Infrastructure.Hosting;
 
 namespace SecureChatBackend.GraphQL;
 
@@ -28,12 +29,8 @@ public sealed class Query
         [Service] IHostEnvironment environment)
     {
         var o = options.Value;
-        var apiRegion = !string.IsNullOrWhiteSpace(o.ApiRegion)
-            ? o.ApiRegion
-            : Environment.GetEnvironmentVariable("AWS_REGION");
-        var deploymentId = !string.IsNullOrWhiteSpace(o.DeploymentId)
-            ? o.DeploymentId
-            : Environment.GetEnvironmentVariable("SECURECHAT_DEPLOYMENT_LABEL");
+        var apiRegion = AwsRuntimeInfo.ResolveApiRegion(o.ApiRegion);
+        var deploymentId = AwsRuntimeInfo.ResolveDeploymentId(o.DeploymentId);
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
         var nodes = o.Nodes
             .Select(n => new NetworkPathNodeDto

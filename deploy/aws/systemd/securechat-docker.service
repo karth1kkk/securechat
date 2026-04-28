@@ -1,0 +1,18 @@
+[Unit]
+Description=SecureChat API (Docker on EC2)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+Restart=always
+RestartSec=5
+# Replace __ECR_IMAGE__ with your ECR URI, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/securechat-api:latest
+ExecStartPre=-/usr/bin/docker stop securechat-api
+ExecStartPre=-/usr/bin/docker rm securechat-api
+ExecStart=/usr/bin/docker run --name securechat-api --rm -p 8080:8080 --env-file /etc/securechat.env __ECR_IMAGE__
+ExecStop=/usr/bin/docker stop securechat-api
+
+[Install]
+WantedBy=multi-user.target

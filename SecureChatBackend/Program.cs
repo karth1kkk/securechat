@@ -8,6 +8,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -39,6 +40,19 @@ if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URL
 }
 
 builder.Configuration.AddEnvironmentVariables();
+
+// Behind AWS ALB / reverse proxy: honor X-Forwarded-Proto and X-Forwarded-For so Request.Scheme is https
+// and JWT / redirects behave correctly. Restrict the app security group so only the load balancer reaches Kestrel.
+var useForwardedHeaders = builder.Configuration.GetValue(
+    "ForwardedHeaders:Enabled",
+    builder.Environment.IsProduction() || builder.Environment.IsStaging());
+if (useForwardedHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    });
+}
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var useInMemory = builder.Configuration.GetValue("Database:UseInMemory", true);
@@ -223,12 +237,18 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddGraphQLServer()
     // In development, return exception details to help debug "Unexpected Execution Error".
-    .ModifyRequestOptions(opt => opt.IncludeExceptionDetails = builder.Environment.IsDevelopment())
+    .ModifyRequestOptions(opt => opt.IncludeExceptionDetails =
+        builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
     .AddAuthorization()
     .AddQueryType<Query>()
     .AddMutationType<Mutation>();
 
 var app = builder.Build();
+
+if (useForwardedHeaders)
+{
+    app.UseForwardedHeaders();
+}
 
 app.UseRouting();
 app.UseCors("default");
