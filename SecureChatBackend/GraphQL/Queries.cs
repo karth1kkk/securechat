@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IdentityModel.Tokens.Jwt;
-using System.Reflection;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,8 +13,6 @@ using Microsoft.Extensions.Options;
 using SecureChatBackend.Application.Interfaces;
 using SecureChatBackend.Application.Services;
 using SecureChatBackend.Configuration;
-using SecureChatBackend.Infrastructure.Hosting;
-
 namespace SecureChatBackend.GraphQL;
 
 public sealed class Query
@@ -26,75 +23,8 @@ public sealed class Query
     [GraphQLName("secureChatNetworkInfo")]
     public SecureChatNetworkInfoDto GetSecureChatNetworkInfo(
         [Service] IOptions<SecureChatNetworkOptions> options,
-        [Service] IHostEnvironment environment)
-    {
-        var o = options.Value;
-        var apiRegion = AwsRuntimeInfo.ResolveApiRegion(o.ApiRegion);
-        var apiAz = AwsRuntimeInfo.ResolveApiAvailabilityZone();
-        var apiInstanceId = AwsRuntimeInfo.ResolveApiInstanceId();
-        var deploymentId = AwsRuntimeInfo.ResolveDeploymentId(o.DeploymentId);
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
-        var nodes = o.Nodes
-            .Select(n => new NetworkPathNodeDto
-            {
-                Role = n.Role,
-                Label = n.Label,
-                CountryCode = n.CountryCode,
-                Region = EnrichPathNodeRegion(n.Role, n.Region, apiRegion, apiAz)
-            })
-            .ToList();
-
-        return new SecureChatNetworkInfoDto
-        {
-            ApiRegion = apiRegion,
-            ApiAvailabilityZone = apiAz,
-            ApiInstanceId = apiInstanceId,
-            Environment = environment.EnvironmentName,
-            DeploymentId = deploymentId,
-            Version = version,
-            Nodes = nodes
-        };
-    }
-
-    private static string? EnrichPathNodeRegion(
-        NetworkPathRole role,
-        string? configuredRegion,
-        string? apiRegion,
-        string? apiAvailabilityZone)
-    {
-        var trimmed = configuredRegion?.Trim();
-        if (!string.IsNullOrEmpty(trimmed))
-        {
-            return configuredRegion;
-        }
-
-        if (role == NetworkPathRole.You)
-        {
-            return configuredRegion;
-        }
-
-        if (role == NetworkPathRole.ServiceNode)
-        {
-            if (!string.IsNullOrEmpty(apiAvailabilityZone) && !string.IsNullOrEmpty(apiRegion))
-            {
-                return $"{apiRegion} · {apiAvailabilityZone}";
-            }
-
-            return string.IsNullOrEmpty(apiRegion) ? null : apiRegion;
-        }
-
-        if (role == NetworkPathRole.EntryNode)
-        {
-            return string.IsNullOrEmpty(apiRegion) ? null : $"{apiRegion} · multi-AZ (ALB)";
-        }
-
-        if (role == NetworkPathRole.Destination)
-        {
-            return string.IsNullOrEmpty(apiRegion) ? null : apiRegion;
-        }
-
-        return configuredRegion;
-    }
+        [Service] IHostEnvironment environment) =>
+        SecureChatNetworkInfoFactory.Create(options, environment);
 
     [GraphQLName("userBySessionId")]
     public async Task<UserDto?> GetUserBySessionIdAsync(

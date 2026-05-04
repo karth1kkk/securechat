@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,8 @@ using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
@@ -160,7 +163,8 @@ builder.Services.AddRateLimiter(options =>
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
-        if (context.Request.Path.StartsWithSegments("/health"))
+        if (context.Request.Path.StartsWithSegments("/health") ||
+            context.Request.Path.StartsWithSegments("/path-info"))
         {
             return RateLimitPartition.GetNoLimiter("health");
         }
@@ -274,6 +278,31 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGraphQL().RequireCors("default");
+// Path screen uses plain JSON (no GraphQL) so hosted web builds are not blocked by Apollo/JWT on anonymous reads.
+app.MapGet(
+        "/path-info",
+        (IOptions<SecureChatNetworkOptions> opt, IHostEnvironment env) =>
+        {
+            var dto = SecureChatNetworkInfoFactory.Create(opt, env);
+            var body = new PathInfoHttpDto
+            {
+                ApiRegion = dto.ApiRegion,
+                ApiAvailabilityZone = dto.ApiAvailabilityZone,
+                ApiInstanceId = dto.ApiInstanceId,
+                Environment = dto.Environment,
+                DeploymentId = dto.DeploymentId,
+                Version = dto.Version,
+                Nodes = dto.Nodes
+                    .Select(n => new PathInfoNodeHttpDto(
+                        NetworkPathRoleWireNames.ToWireName(n.Role),
+                        n.Label,
+                        n.CountryCode,
+                        n.Region))
+                    .ToList()
+            };
+            return Results.Json(body);
+        })
+    .RequireCors("default");
 // Browsers need CORS on hub endpoints too (negotiate + WebSockets); without this, hosted web apps on another origin fail silently or show odd errors.
 app.MapHub<MessagingHub>("/hubs/messaging").RequireCors("default");
 app.MapHub<CallHub>("/hubs/call").RequireCors("default");
@@ -287,6 +316,7 @@ app.MapGet("/", () =>
         This host only exposes an API (no website at /).
 
         • POST /graphql — GraphQL (Hot Chocolate; Banana Cake Pop UI may be at /graphql depending on config)
+        • GET /path-info — JSON path / AWS placement (used by the mobile Path screen)
         • GET /health — Health check
         • /hubs/messaging — SignalR (realtime chat)
         • /hubs/call — SignalR (call signaling)

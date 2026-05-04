@@ -1,12 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { ApolloError, useQuery } from '@apollo/client';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
-import { SECURE_CHAT_NETWORK_INFO } from '../graphql/queries';
-import { GRAPHQL_URL } from '../config';
+import { API_URL } from '../config';
+
+const PATH_INFO_URL = `${API_URL.replace(/\/$/, '')}/path-info`;
+
+/** Session-style hop titles (values under each hop come from the API as AWS-enriched text). */
+const SESSION_ROLE_LABELS: Record<'you' | 'entry' | 'service' | 'relay' | 'destination', string> = {
+  you: 'You',
+  entry: 'Entry node',
+  service: 'Service node',
+  relay: 'Relay',
+  destination: 'Destination'
+};
+
+async function fetchPathInfo(signal: AbortSignal): Promise<SecureChatNetworkInfoPayload> {
+  const res = await fetch(PATH_INFO_URL, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
+  }
+  return JSON.parse(text) as SecureChatNetworkInfoPayload;
+}
 
 type NetworkPathRole =
   | 'YOU'
@@ -108,91 +130,38 @@ function formatNodeMeta(node: NetworkNode): string | undefined {
   return parts.join(' · ');
 }
 
-function awsComponentHintForNode(
-  kind: 'you' | 'entry' | 'service' | 'relay' | 'destination',
-  apiAz: string | null | undefined
-): string | null {
-  if (kind === 'entry') {
-    return 'AWS: Application Load Balancer (HTTPS, ACM). Distributes requests across targets in each enabled AZ.';
-  }
-  if (kind === 'service') {
-    const az = apiAz?.trim();
-    if (az) {
-      return `AWS: API host in ${az} (see placement above).`;
-    }
-    return 'AWS: API & GraphQL on this host (AZ above when reported).';
-  }
-  if (kind === 'destination') {
-    return 'AWS: Amazon RDS for PostgreSQL in this Region (Multi-AZ is configured in RDS, not shown here).';
-  }
-  return null;
-}
-
-function extractNetworkErrorBody(error: ApolloError): string | undefined {
-  const ne = error.networkError as {
-    statusCode?: number;
-    bodyText?: string;
-    result?: unknown;
-  } | null;
-  if (!ne) {
-    return undefined;
-  }
-  if (typeof ne.bodyText === 'string' && ne.bodyText.length > 0) {
-    return ne.bodyText.slice(0, 1600);
-  }
-  if (ne.result != null) {
-    try {
-      return JSON.stringify(ne.result).slice(0, 1600);
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-function describePathLoadError(error: ApolloError): { detail: string; hint?: string; networkBody?: string } {
-  const gqlLines = error.graphQLErrors?.map((e) => e.message).filter(Boolean) ?? [];
-  const networkBody = extractNetworkErrorBody(error);
-  const detail =
-    gqlLines.length > 0 ? gqlLines.join('\n') : error.message || 'Request failed';
-
-  const looksLikeSchemaMismatch = gqlLines.some(
-    (m) =>
-      m.includes('does not exist') ||
-      m.includes('Unknown field') ||
-      m.includes('Cannot query field') ||
-      m.includes('secureChatNetworkInfo')
-  );
-
-  const status = error.networkError && 'statusCode' in error.networkError ? error.networkError.statusCode : undefined;
-
-  let hint: string | undefined;
-  if (looksLikeSchemaMismatch) {
-    hint =
-      'The API schema does not match this app build. Set EXPO_PUBLIC_GRAPHQL_URL to https://your-host/graphql for the SecureChat backend you deploy, clear cache, rebuild the web bundle, and confirm the server image includes the current GraphQL schema.';
-  } else if (status === 400) {
-    hint =
-      'HTTP 400 often means a bad GraphQL request (wrong URL, or an invalid Authorization header). In DevTools → Network, open the failed graphql POST and read Response. Try clearing site data if a stale JWT is sent.';
-  }
-
-  return { detail, hint, networkBody };
-}
-
 export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Path'>> = () => {
   const { palette } = useTheme();
   const pulse = useRef(new Animated.Value(0)).current;
+  const [networkInfo, setNetworkInfo] = useState<SecureChatNetworkInfoPayload | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  const { data, loading, error, refetch } = useQuery(SECURE_CHAT_NETWORK_INFO, {
-    fetchPolicy: 'network-only'
-  });
+  const reload = useCallback(async (signal: AbortSignal) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchPathInfo(signal);
+      setNetworkInfo(data);
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') {
+        return;
+      }
+      setNetworkInfo(undefined);
+      setError(e instanceof Error ? e : new Error('Request failed'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      void refetch();
-    }, [refetch])
+      const controller = new AbortController();
+      void reload(controller.signal);
+      return () => controller.abort();
+    }, [reload])
   );
 
-  const networkInfo = data?.secureChatNetworkInfo as SecureChatNetworkInfoPayload | undefined;
   const pathNodes: NetworkNode[] = useMemo(() => networkInfo?.nodes ?? [], [networkInfo]);
   const awsRows = useMemo(() => buildAwsPlacementRows(networkInfo), [networkInfo]);
   const hasAwsPlacement = useMemo(() => awsPlacementReported(networkInfo), [networkInfo]);
@@ -231,37 +200,30 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
   }
 
   if (error) {
-    const apollo = error instanceof ApolloError ? error : null;
-    const { detail, hint, networkBody } = apollo
-      ? describePathLoadError(apollo)
-      : { detail: error.message, hint: undefined, networkBody: undefined };
     return (
       <View className="flex-1 items-center justify-center p-5" style={{ backgroundColor: palette.background }}>
         <Text className="text-lg font-semibold" style={{ color: palette.text }}>
           Could not load path
         </Text>
         <Text className="mt-2 text-center text-sm" style={{ color: palette.muted }}>
-          {detail}
+          {error.message}
         </Text>
         <Text className="mt-2 text-center text-[12px] leading-4" style={{ color: palette.muted }} selectable>
-          GraphQL endpoint (from this build):{'\n'}
-          {GRAPHQL_URL}
+          GET (no auth):{'\n'}
+          {PATH_INFO_URL}
         </Text>
-        {networkBody ? (
-          <Text
-            selectable
-            className="mt-2 max-h-48 w-full rounded-lg border p-2 font-mono text-[11px] leading-4"
-            style={{ color: palette.text, borderColor: palette.border, backgroundColor: palette.surface }}
-          >
-            {networkBody}
-          </Text>
-        ) : null}
-        {hint ? (
-          <Text className="mt-3 text-center text-[13px] leading-[18px]" style={{ color: palette.muted }}>
-            {hint}
-          </Text>
-        ) : null}
-        <Pressable className="mt-5 rounded-xl px-6 py-3" style={{ backgroundColor: palette.action }} onPress={() => void refetch()}>
+        <Text className="mt-3 text-center text-[13px] leading-[18px]" style={{ color: palette.muted }}>
+          Deploy a backend that exposes GET /path-info (SecureChatBackend from this repo). EXPO_PUBLIC_API_URL must be
+          the API base (same host as GraphQL), e.g. https://www.securecht.xyz
+        </Text>
+        <Pressable
+          className="mt-5 rounded-xl px-6 py-3"
+          style={{ backgroundColor: palette.action }}
+          onPress={() => {
+            const ac = new AbortController();
+            void reload(ac.signal);
+          }}
+        >
           <Text className="text-base font-semibold" style={{ color: palette.background }}>
             Retry
           </Text>
@@ -276,7 +238,14 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
         <Text className="text-sm" style={{ color: palette.muted }}>
           No routing nodes configured.
         </Text>
-        <Pressable className="mt-4 rounded-xl px-6 py-3" style={{ backgroundColor: palette.action }} onPress={() => void refetch()}>
+        <Pressable
+          className="mt-4 rounded-xl px-6 py-3"
+          style={{ backgroundColor: palette.action }}
+          onPress={() => {
+            const ac = new AbortController();
+            void reload(ac.signal);
+          }}
+        >
           <Text className="text-base font-semibold" style={{ color: palette.background }}>
             Refresh
           </Text>
@@ -296,9 +265,8 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
         Path
       </Text>
       <Text className="mb-3 text-sm leading-5" style={{ color: palette.muted }}>
-        Hops from your device to SecureChat. The API reports its AWS Region and (when EC2/ECS metadata or env vars are
-        available) the single availability zone where this API process runs. The TLS entry hop is an Application Load
-        Balancer: it is regional and uses every AZ you attached to the listener subnets.
+        Session-style hops (You → Entry → Service → Relay → Destination). Values under each hop are AWS-oriented text
+        from the API (Region, AZ, ALB, EC2, RDS). Data is loaded with GET /path-info (no GraphQL, no JWT).
       </Text>
 
       <View className="mb-5 rounded-2xl border p-4" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
@@ -337,9 +305,10 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
         {pathNodes.map((node, index) => {
           const kind = normalizeRole(node.role);
           const meta = formatNodeMeta(node);
-          const awsHop = awsComponentHintForNode(kind, networkInfo?.apiAvailabilityZone);
+          const hopTitle = SESSION_ROLE_LABELS[kind] ?? node.label;
+          const showConfigLabel = node.label.trim().length > 0 && node.label.trim() !== hopTitle;
           return (
-            <View key={`${node.label}-${index}`} className="mb-6 flex-row items-start pl-3">
+            <View key={`${node.role}-${node.label}-${index}`} className="mb-6 flex-row items-start pl-3">
               <View className="w-[52px] items-center">
                 <Animated.View
                   className="h-5 w-5 rounded-[10px]"
@@ -355,34 +324,58 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
               </View>
               <View className="flex-1">
                 <Text className="text-lg font-semibold" style={{ color: palette.text }}>
-                  {node.label}
+                  {hopTitle}
                 </Text>
+                {showConfigLabel ? (
+                  <Text className="mt-0.5 text-xs" style={{ color: palette.muted }}>
+                    {node.label}
+                  </Text>
+                ) : null}
                 {meta ? (
-                  <Text className="mt-1 text-sm" style={{ color: palette.muted }}>
+                  <Text className="mt-1 text-sm leading-5" style={{ color: palette.muted }}>
                     {meta}
                   </Text>
                 ) : null}
-                {awsHop ? (
-                  <Text className="mt-1.5 text-[12px] leading-[16px]" style={{ color: palette.muted }}>
-                    {awsHop}
-                  </Text>
-                ) : null}
-                {kind === 'service' && (
+                {kind === 'you' ? (
                   <Text
                     className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
                     style={{ color: palette.text, borderColor: palette.border }}
                   >
-                    Service
+                    You
                   </Text>
-                )}
-                {kind === 'entry' && (
+                ) : null}
+                {kind === 'entry' ? (
                   <Text
                     className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
                     style={{ color: palette.text, borderColor: palette.border }}
                   >
                     Entry
                   </Text>
-                )}
+                ) : null}
+                {kind === 'service' ? (
+                  <Text
+                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
+                    style={{ color: palette.text, borderColor: palette.border }}
+                  >
+                    Service
+                  </Text>
+                ) : null}
+                {kind === 'relay' ? (
+                  <Text
+                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
+                    style={{ color: palette.text, borderColor: palette.border }}
+                  >
+                    Relay
+                  </Text>
+                ) : null}
+                {kind === 'destination' ? (
+                  <Text
+                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
+                    style={{ color: palette.text, borderColor: palette.border }}
+                  >
+                    Destination
+                  </Text>
+                ) : null}
               </View>
             </View>
           );
