@@ -6,6 +6,7 @@ import { ApolloError, useQuery } from '@apollo/client';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
 import { SECURE_CHAT_NETWORK_INFO } from '../graphql/queries';
+import { GRAPHQL_URL } from '../config';
 
 type NetworkPathRole =
   | 'YOU'
@@ -241,6 +242,10 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
         </Text>
         <Text className="mt-2 text-center text-sm" style={{ color: palette.muted }}>
           {detail}
+        </Text>
+        <Text className="mt-2 text-center text-[12px] leading-4" style={{ color: palette.muted }} selectable>
+          GraphQL endpoint (from this build):{'\n'}
+          {GRAPHQL_URL}
         </Text>
         {networkBody ? (
           <Text
