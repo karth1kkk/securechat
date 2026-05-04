@@ -1,11 +1,10 @@
 import { gql } from '@apollo/client';
 
+/** Older production APIs omit GraphQL fields apiAvailabilityZone / apiInstanceId; keep this query compatible until those hosts are redeployed. */
 export const SECURE_CHAT_NETWORK_INFO = gql`
   query SecureChatNetworkInfo {
     secureChatNetworkInfo {
       apiRegion
-      apiAvailabilityZone
-      apiInstanceId
       environment
       deploymentId
       version

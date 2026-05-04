@@ -8,13 +8,13 @@ import { API_URL, GRAPHQL_URL } from '../config';
 
 const PATH_INFO_URL = `${API_URL.replace(/\/$/, '')}/path-info`;
 
-/** Used when GET /path-info is 404 (API image not updated yet). No Authorization header — avoids JWT 400 on public field. */
+/** Used when GET /path-info is 404 (API image not updated yet). No Authorization header — avoids JWT 400 on public field.
+ *  Omits apiAvailabilityZone / apiInstanceId so older GraphQL schemas still accept the query; those show on GET /path-info once deployed.
+ */
 const PATH_FALLBACK_GRAPHQL = `
   query PathFallbackNetworkInfo {
     secureChatNetworkInfo {
       apiRegion
-      apiAvailabilityZone
-      apiInstanceId
       environment
       deploymentId
       version
