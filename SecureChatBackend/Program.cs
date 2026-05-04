@@ -8,6 +8,7 @@ using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Http;
@@ -302,7 +303,8 @@ app.MapGet(
             };
             return Results.Json(body);
         })
-    .RequireCors("default");
+    .RequireCors("default")
+    .AllowAnonymous();
 // Browsers need CORS on hub endpoints too (negotiate + WebSockets); without this, hosted web apps on another origin fail silently or show odd errors.
 app.MapHub<MessagingHub>("/hubs/messaging").RequireCors("default");
 app.MapHub<CallHub>("/hubs/call").RequireCors("default");

@@ -4,9 +4,29 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../theme/ThemeContext';
-import { API_URL } from '../config';
+import { API_URL, GRAPHQL_URL } from '../config';
 
 const PATH_INFO_URL = `${API_URL.replace(/\/$/, '')}/path-info`;
+
+/** Used when GET /path-info is 404 (API image not updated yet). No Authorization header — avoids JWT 400 on public field. */
+const PATH_FALLBACK_GRAPHQL = `
+  query PathFallbackNetworkInfo {
+    secureChatNetworkInfo {
+      apiRegion
+      apiAvailabilityZone
+      apiInstanceId
+      environment
+      deploymentId
+      version
+      nodes {
+        role
+        label
+        countryCode
+        region
+      }
+    }
+  }
+`;
 
 /** Session-style hop titles (values under each hop come from the API as AWS-enriched text). */
 const SESSION_ROLE_LABELS: Record<'you' | 'entry' | 'service' | 'relay' | 'destination', string> = {
@@ -17,13 +37,39 @@ const SESSION_ROLE_LABELS: Record<'you' | 'entry' | 'service' | 'relay' | 'desti
   destination: 'Destination'
 };
 
-async function fetchPathInfo(signal: AbortSignal): Promise<SecureChatNetworkInfoPayload> {
+async function fetchPathPayload(signal: AbortSignal): Promise<SecureChatNetworkInfoPayload> {
   const res = await fetch(PATH_INFO_URL, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     signal
   });
   const text = await res.text();
+
+  if (res.status === 404) {
+    const gqlRes = await fetch(GRAPHQL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ query: PATH_FALLBACK_GRAPHQL }),
+      signal
+    });
+    const gqlText = await gqlRes.text();
+    if (!gqlRes.ok) {
+      throw new Error(`HTTP ${gqlRes.status} (GraphQL fallback): ${gqlText.slice(0, 500)}`);
+    }
+    const json = JSON.parse(gqlText) as {
+      data?: { secureChatNetworkInfo?: SecureChatNetworkInfoPayload };
+      errors?: { message: string }[];
+    };
+    if (json.errors?.length) {
+      throw new Error(json.errors.map((e) => e.message).join('; '));
+    }
+    const info = json.data?.secureChatNetworkInfo;
+    if (!info) {
+      throw new Error('GraphQL fallback: empty secureChatNetworkInfo');
+    }
+    return info;
+  }
+
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
   }
@@ -141,7 +187,7 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchPathInfo(signal);
+      const data = await fetchPathPayload(signal);
       setNetworkInfo(data);
     } catch (e) {
       if ((e as Error)?.name === 'AbortError') {
@@ -213,8 +259,9 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
           {PATH_INFO_URL}
         </Text>
         <Text className="mt-3 text-center text-[13px] leading-[18px]" style={{ color: palette.muted }}>
-          Deploy a backend that exposes GET /path-info (SecureChatBackend from this repo). EXPO_PUBLIC_API_URL must be
-          the API base (same host as GraphQL), e.g. https://www.securecht.xyz
+          If GET /path-info returns 404, this build automatically retries GraphQL without an Authorization header. For
+          AWS-enriched hop text, deploy the latest SecureChat backend (includes GET /path-info and updated region
+          strings). EXPO_PUBLIC_API_URL / EXPO_PUBLIC_GRAPHQL_URL must point at this API.
         </Text>
         <Pressable
           className="mt-5 rounded-xl px-6 py-3"
