@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Linking,
+  Pressable,
+  ScrollView,
+  Text,
+  View
+} from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
@@ -28,7 +36,6 @@ const PATH_FALLBACK_GRAPHQL = `
   }
 `;
 
-/** Session-style hop titles (values under each hop come from the API as AWS-enriched text). */
 const SESSION_ROLE_LABELS: Record<'you' | 'entry' | 'service' | 'relay' | 'destination', string> = {
   you: 'You',
   entry: 'Entry node',
@@ -36,6 +43,22 @@ const SESSION_ROLE_LABELS: Record<'you' | 'entry' | 'service' | 'relay' | 'desti
   relay: 'Relay',
   destination: 'Destination'
 };
+
+/** Session-style path trace: neon green on dark, deeper green on light. */
+function pathTraceColors(isDark: boolean): { line: string; dot: string; dotGlow: string } {
+  if (isDark) {
+    return {
+      line: 'rgba(248,250,252,0.22)',
+      dot: '#4ADE80',
+      dotGlow: 'rgba(74,222,128,0.45)'
+    };
+  }
+  return {
+    line: 'rgba(15,23,42,0.15)',
+    dot: '#16A34A',
+    dotGlow: 'rgba(22,163,74,0.25)'
+  };
+}
 
 async function fetchPathPayload(signal: AbortSignal): Promise<SecureChatNetworkInfoPayload> {
   const res = await fetch(PATH_INFO_URL, {
@@ -101,63 +124,6 @@ type SecureChatNetworkInfoPayload = {
   nodes?: NetworkNode[];
 };
 
-function emDashWhenEmpty(value: string | null | undefined): string {
-  const t = value?.trim();
-  return t && t.length > 0 ? t : '—';
-}
-
-type AwsPlacementRow = { label: string; value: string; hint?: string };
-
-function buildAwsPlacementRows(info: SecureChatNetworkInfoPayload | undefined): AwsPlacementRow[] {
-  if (!info) {
-    return [];
-  }
-  return [
-    {
-      label: 'AWS Region',
-      value: emDashWhenEmpty(info.apiRegion),
-      hint: 'Region for this API process (env or instance metadata).'
-    },
-    {
-      label: 'Availability zone',
-      value: emDashWhenEmpty(info.apiAvailabilityZone),
-      hint: 'Single AZ where this API runs on EC2/ECS. ALB below spans every AZ you enabled on the load balancer.'
-    },
-    {
-      label: 'EC2 instance',
-      value: emDashWhenEmpty(info.apiInstanceId),
-      hint: 'Instance running the API container when reported (IMDS or EC2_INSTANCE_ID).'
-    },
-    {
-      label: 'Deployment',
-      value: emDashWhenEmpty(info.deploymentId),
-      hint: 'Task ARN on ECS, or instance id / label from configuration.'
-    },
-    {
-      label: 'Environment',
-      value: emDashWhenEmpty(info.environment),
-      hint: 'ASPNETCORE_ENVIRONMENT for this API.'
-    },
-    {
-      label: 'API version',
-      value: emDashWhenEmpty(info.version),
-      hint: 'Assembly version of the running backend.'
-    }
-  ];
-}
-
-function awsPlacementReported(info: SecureChatNetworkInfoPayload | undefined): boolean {
-  if (!info) {
-    return false;
-  }
-  return Boolean(
-    info.apiRegion?.trim() ||
-      info.apiAvailabilityZone?.trim() ||
-      info.apiInstanceId?.trim() ||
-      info.deploymentId?.trim()
-  );
-}
-
 function normalizeRole(role: string): 'you' | 'entry' | 'service' | 'relay' | 'destination' {
   const r = role.toUpperCase();
   if (r === 'YOU') return 'you';
@@ -176,8 +142,56 @@ function formatNodeMeta(node: NetworkNode): string | undefined {
   return parts.join(' · ');
 }
 
+/** Secondary line under each hop: prefer AWS region + AZ on the first service hop (API tier). */
+function buildHopSubtitle(
+  node: NetworkNode,
+  index: number,
+  kind: 'you' | 'entry' | 'service' | 'relay' | 'destination',
+  info: SecureChatNetworkInfoPayload | undefined,
+  pathNodes: NetworkNode[]
+): string | undefined {
+  if (kind === 'you') {
+    return 'This device';
+  }
+
+  const firstServiceIdx = pathNodes.findIndex((n) => normalizeRole(n.role) === 'service');
+  const isPrimaryServiceHop = kind === 'service' && index === firstServiceIdx && firstServiceIdx >= 0;
+
+  if (isPrimaryServiceHop) {
+    const region = info?.apiRegion?.trim();
+    const az = info?.apiAvailabilityZone?.trim();
+    if (region && az) {
+      return `${region} · ${az}`;
+    }
+    if (region) {
+      return region;
+    }
+    if (az) {
+      return az;
+    }
+  }
+
+  const meta = formatNodeMeta(node);
+  if (meta) {
+    return meta;
+  }
+
+  if (kind === 'entry' && info?.apiRegion?.trim()) {
+    return info.apiRegion.trim();
+  }
+
+  return undefined;
+}
+
+const DOT_YOU = 16;
+const DOT_OTHER = 10;
+const SEG_ABOVE = 14;
+const SEG_BELOW = 22;
+
 export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Path'>> = () => {
-  const { palette } = useTheme();
+  const { palette, preference } = useTheme();
+  const isDark = preference.mode === 'dark';
+  const trace = useMemo(() => pathTraceColors(isDark), [isDark]);
   const pulse = useRef(new Animated.Value(0)).current;
   const [networkInfo, setNetworkInfo] = useState<SecureChatNetworkInfoPayload | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -209,8 +223,6 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
   );
 
   const pathNodes: NetworkNode[] = useMemo(() => networkInfo?.nodes ?? [], [networkInfo]);
-  const awsRows = useMemo(() => buildAwsPlacementRows(networkInfo), [networkInfo]);
-  const hasAwsPlacement = useMemo(() => awsPlacementReported(networkInfo), [networkInfo]);
 
   useEffect(() => {
     Animated.loop(
@@ -229,9 +241,9 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
     ).start();
   }, [pulse]);
 
-  const scale = pulse.interpolate({
+  const youScale = pulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.25]
+    outputRange: [1, 1.12]
   });
 
   if (loading && pathNodes.length === 0) {
@@ -301,126 +313,78 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
     );
   }
 
+  const lastIndex = pathNodes.length - 1;
+
   return (
     <ScrollView
       className="flex-1"
       style={{ backgroundColor: palette.background }}
-      contentContainerStyle={{ padding: 20, paddingBottom: 32, flexGrow: 1 }}
+      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40, flexGrow: 1 }}
       keyboardShouldPersistTaps="handled"
     >
-      <Text className="mb-2 text-[28px] font-bold" style={{ color: palette.text }}>
-        Path
-      </Text>
-      <Text className="mb-3 text-sm leading-5" style={{ color: palette.muted }}>
-        Session-style hops (You → Entry → Service → Relay → Destination). Values under each hop are AWS-oriented text
-        from the API (Region, AZ, ALB, EC2, RDS). Data is loaded with GET /path-info (no GraphQL, no JWT).
+      <Text className="mb-8 text-[16px] leading-[24px]" style={{ color: palette.muted }}>
+        Session routes messages through several hops in its decentralized network. SecureChat uses TLS to this service
+        instead; the diagram below shows how your traffic reaches our infrastructure, including{' '}
+        <Text style={{ color: palette.text, fontWeight: '600' }}>AWS region</Text> and{' '}
+        <Text style={{ color: palette.text, fontWeight: '600' }}>availability zone</Text> where the API reports them.
       </Text>
 
-      <View className="mb-5 rounded-2xl border p-4" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
-        <Text className="mb-3 text-base font-semibold" style={{ color: palette.text }}>
-          {'AWS & placement'}
-        </Text>
-        {awsRows.map((row) => (
-          <View key={row.label} className="mb-3 border-b pb-3 last:mb-0 last:border-b-0 last:pb-0" style={{ borderBottomColor: palette.border }}>
-            <Text className="text-xs font-semibold uppercase tracking-wide" style={{ color: palette.muted }}>
-              {row.label}
-            </Text>
-            <Text className="mt-1 text-[15px] leading-[22px]" style={{ color: palette.text }}>
-              {row.value}
-            </Text>
-            {row.hint ? (
-              <Text className="mt-1 text-[12px] leading-[16px]" style={{ color: palette.muted }}>
-                {row.hint}
-              </Text>
-            ) : null}
-          </View>
-        ))}
-        {!hasAwsPlacement ? (
-          <Text className="text-[13px] leading-[18px]" style={{ color: palette.muted }}>
-            Region / AZ / instance were not detected (common for local dev, or Docker without IMDS). On EC2 you can set
-            AWS_REGION, EC2_INSTANCE_ID, and optionally the AZ in env so this card fills in without IMDS from the
-            container network.
-          </Text>
-        ) : null}
-      </View>
-
-      <Text className="mb-2 text-sm font-semibold" style={{ color: palette.text }}>
-        Traffic path
-      </Text>
-      <View className="relative flex-1 pl-6">
-        <View className="absolute bottom-6 left-[26px] top-7 w-0.5" style={{ backgroundColor: palette.border }} />
+      <View className="pb-6">
         {pathNodes.map((node, index) => {
           const kind = normalizeRole(node.role);
-          const meta = formatNodeMeta(node);
           const hopTitle = SESSION_ROLE_LABELS[kind] ?? node.label;
-          const showConfigLabel = node.label.trim().length > 0 && node.label.trim() !== hopTitle;
+          const subtitle = buildHopSubtitle(node, index, kind, networkInfo, pathNodes);
+          const isYou = kind === 'you';
+          const dotSize = isYou ? DOT_YOU : DOT_OTHER;
+          const showLineAbove = index > 0;
+          const showLineBelow = index < lastIndex;
+
           return (
-            <View key={`${node.role}-${node.label}-${index}`} className="mb-6 flex-row items-start pl-3">
-              <View className="w-[52px] items-center">
-                <Animated.View
-                  className="h-5 w-5 rounded-[10px]"
-                  style={{
-                    backgroundColor: palette.action,
-                    shadowColor: palette.glow,
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowRadius: 12,
-                    shadowOpacity: 0.9,
-                    transform: [{ scale }]
-                  }}
-                />
+            <View key={`${node.role}-${node.label}-${index}`} className="flex-row">
+              <View className="items-center" style={{ width: 32 }}>
+                {showLineAbove ? (
+                  <View style={{ width: 2, height: SEG_ABOVE, backgroundColor: trace.line }} />
+                ) : null}
+                {isYou ? (
+                  <Animated.View
+                    style={{
+                      width: dotSize,
+                      height: dotSize,
+                      borderRadius: dotSize / 2,
+                      backgroundColor: trace.dot,
+                      shadowColor: trace.dotGlow,
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 1,
+                      shadowRadius: 14,
+                      elevation: 8,
+                      transform: [{ scale: youScale }]
+                    }}
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: dotSize,
+                      height: dotSize,
+                      borderRadius: dotSize / 2,
+                      backgroundColor: trace.dot
+                    }}
+                  />
+                )}
+                {showLineBelow ? (
+                  <View style={{ width: 2, height: SEG_BELOW, backgroundColor: trace.line }} />
+                ) : null}
               </View>
-              <View className="flex-1">
-                <Text className="text-lg font-semibold" style={{ color: palette.text }}>
+
+              <View className="min-w-0 flex-1" style={{ paddingLeft: 14, paddingBottom: index < lastIndex ? 6 : 0 }}>
+                <Text
+                  className="text-[17px] font-semibold tracking-tight"
+                  style={{ color: palette.text, marginTop: showLineAbove ? -4 : 0 }}
+                >
                   {hopTitle}
                 </Text>
-                {showConfigLabel ? (
-                  <Text className="mt-0.5 text-xs" style={{ color: palette.muted }}>
-                    {node.label}
-                  </Text>
-                ) : null}
-                {meta ? (
-                  <Text className="mt-1 text-sm leading-5" style={{ color: palette.muted }}>
-                    {meta}
-                  </Text>
-                ) : null}
-                {kind === 'you' ? (
-                  <Text
-                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
-                    style={{ color: palette.text, borderColor: palette.border }}
-                  >
-                    You
-                  </Text>
-                ) : null}
-                {kind === 'entry' ? (
-                  <Text
-                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
-                    style={{ color: palette.text, borderColor: palette.border }}
-                  >
-                    Entry
-                  </Text>
-                ) : null}
-                {kind === 'service' ? (
-                  <Text
-                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
-                    style={{ color: palette.text, borderColor: palette.border }}
-                  >
-                    Service
-                  </Text>
-                ) : null}
-                {kind === 'relay' ? (
-                  <Text
-                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
-                    style={{ color: palette.text, borderColor: palette.border }}
-                  >
-                    Relay
-                  </Text>
-                ) : null}
-                {kind === 'destination' ? (
-                  <Text
-                    className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
-                    style={{ color: palette.text, borderColor: palette.border }}
-                  >
-                    Destination
+                {subtitle ? (
+                  <Text className="mt-1 text-[14px] leading-[20px]" style={{ color: palette.muted }}>
+                    {subtitle}
                   </Text>
                 ) : null}
               </View>
@@ -428,6 +392,16 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
           );
         })}
       </View>
+
+      <Pressable
+        className="mt-4 self-center rounded-full border-2 px-8 py-3.5"
+        style={{ borderColor: palette.action, backgroundColor: 'transparent' }}
+        onPress={() => void Linking.openURL('https://getsession.org')}
+      >
+        <Text className="text-[15px] font-semibold" style={{ color: palette.action }}>
+          Learn more
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 };
