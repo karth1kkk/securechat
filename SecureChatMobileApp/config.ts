@@ -35,6 +35,9 @@ const GRAPHQL_URL = (
 const SIGNALR_URL = `${API_URL}/hubs/messaging`;
 const CALL_HUB_URL = `${API_URL}/hubs/call`;
 
+/** Giphy search (GIF picker). Set `EXPO_PUBLIC_GIPHY_API_KEY` in `.env`; never commit real keys. */
+const GIPHY_API_KEY = trim(process.env.EXPO_PUBLIC_GIPHY_API_KEY);
+
 if (typeof __DEV__ !== 'undefined' && __DEV__) {
   console.log('[SecureChat] API_URL=', API_URL, '| GRAPHQL_URL=', GRAPHQL_URL, '| CALL_HUB_URL=', CALL_HUB_URL);
   if (/localhost|127\.0\.0\.1/i.test(API_URL)) {
@@ -85,4 +88,4 @@ export function buildRtcConfiguration(): RTCConfiguration {
   return { iceServers };
 }
 
-export { GRAPHQL_URL, API_URL, SIGNALR_URL, CALL_HUB_URL };
+export { GRAPHQL_URL, API_URL, SIGNALR_URL, CALL_HUB_URL, GIPHY_API_KEY };

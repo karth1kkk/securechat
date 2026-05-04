@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  Dimensions,
   FlatList,
+  Image,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -31,6 +35,8 @@ import { recordFinishedGameStats } from '../services/gameStatsRecorder';
 import { serializeRichMessage } from '../lib/chatRichMessage';
 import { decodeJwtSub } from '../lib/jwtDecode';
 import { normalizeUserId, sameUserId } from '../lib/userIds';
+import { GIPHY_API_KEY } from '../config';
+import { giphySearch, type GiphyGifItem } from '../services/giphyApi';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -92,7 +98,11 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
   const [gameModalOpen, setGameModalOpen] = useState(false);
   const [stickerModalOpen, setStickerModalOpen] = useState(false);
   const [gifModalOpen, setGifModalOpen] = useState(false);
-  const [gifUrlInput, setGifUrlInput] = useState('');
+  const [gifQuery, setGifQuery] = useState('');
+  const [debouncedGifQuery, setDebouncedGifQuery] = useState('');
+  const [gifResults, setGifResults] = useState<GiphyGifItem[]>([]);
+  const [gifLoading, setGifLoading] = useState(false);
+  const [gifFetchError, setGifFetchError] = useState<string | null>(null);
   const flatListRef = useRef<FlatList<ThreadMessage>>(null);
   const signalR = useRef(new SignalRService());
   const client = useApolloClient();
@@ -615,16 +625,76 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
     }
   }, [sendPlaintextMessage]);
 
-  const sendGifFromModal = useCallback(async () => {
-    const u = gifUrlInput.trim();
-    if (!/^https?:\/\//i.test(u)) {
-      Alert.alert('Invalid URL', 'Paste a GIF link starting with http:// or https://');
+  useEffect(() => {
+    if (!gifModalOpen) {
       return;
     }
-    setGifUrlInput('');
-    setGifModalOpen(false);
-    await sendPlaintextMessage(serializeRichMessage({ type: 'gif', url: u }));
-  }, [gifUrlInput, sendPlaintextMessage]);
+    setGifQuery('');
+    setGifFetchError(null);
+    setGifResults([]);
+  }, [gifModalOpen]);
+
+  useEffect(() => {
+    if (!gifModalOpen) {
+      return;
+    }
+    const q = gifQuery.trim();
+    if (q === '') {
+      setDebouncedGifQuery('');
+      return;
+    }
+    const t = setTimeout(() => setDebouncedGifQuery(q), 450);
+    return () => clearTimeout(t);
+  }, [gifModalOpen, gifQuery]);
+
+  useEffect(() => {
+    if (!gifModalOpen || !GIPHY_API_KEY) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setGifLoading(true);
+      setGifFetchError(null);
+      try {
+        const items = await giphySearch(GIPHY_API_KEY, debouncedGifQuery);
+        if (!cancelled) {
+          setGifResults(items);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setGifResults([]);
+          setGifFetchError(e instanceof Error ? e.message : 'Could not load GIFs');
+        }
+      } finally {
+        if (!cancelled) {
+          setGifLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gifModalOpen, debouncedGifQuery, GIPHY_API_KEY]);
+
+  const sendGifByUrl = useCallback(
+    async (url: string) => {
+      if (!/^https?:\/\//i.test(url)) {
+        Alert.alert('Invalid GIF', 'Could not use this animation URL.');
+        return;
+      }
+      setGifModalOpen(false);
+      await sendPlaintextMessage(serializeRichMessage({ type: 'gif', url }));
+    },
+    [sendPlaintextMessage]
+  );
+
+  const gifCellSize = useMemo(() => {
+    const w = Dimensions.get('window').width;
+    const outerPad = 20;
+    const gap = 8;
+    const cols = 3;
+    return Math.max(96, Math.floor((w - outerPad * 2 - gap * (cols - 1)) / cols));
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim()) {
@@ -708,7 +778,7 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
           <Ionicons name="videocam-outline" size={22} color={palette.action} />
         </Pressable>
         <Pressable
-          accessibilityLabel="GIF link"
+          accessibilityLabel="GIFs, search Giphy"
           className="rounded-xl border px-3 py-2.5"
           style={{ borderColor: palette.border }}
           onPress={() => setGifModalOpen(true)}
@@ -765,41 +835,105 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
         </Pressable>
       </Modal>
 
-      <Modal visible={gifModalOpen} transparent animationType="fade" onRequestClose={() => setGifModalOpen(false)}>
-        <Pressable className="flex-1 justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
+      <Modal visible={gifModalOpen} transparent animationType="slide" onRequestClose={() => setGifModalOpen(false)}>
+        <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setGifModalOpen(false)}>
           <Pressable
-            className="rounded-2xl border p-4"
-            style={{ backgroundColor: palette.background, borderColor: palette.border }}
+            className="rounded-t-3xl border-l border-r border-t p-4"
+            style={{
+              maxHeight: Dimensions.get('window').height * 0.88,
+              backgroundColor: palette.background,
+              borderColor: palette.border
+            }}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text className="mb-2 text-base font-semibold" style={{ color: palette.text }}>
-              Send a GIF
-            </Text>
-            <Text className="mb-2 text-xs" style={{ color: palette.muted }}>
-              Paste a direct link to a GIF image (e.g. from Giphy → Copy image address).
-            </Text>
-            <TextInput
-              placeholder="https://..."
-              placeholderTextColor={palette.placeholder}
-              className="mb-3 rounded-xl border p-3"
-              style={{ borderColor: palette.border, color: palette.text }}
-              value={gifUrlInput}
-              onChangeText={setGifUrlInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <View className="flex-row justify-end gap-2">
-              <Pressable className="rounded-xl px-4 py-2" onPress={() => setGifModalOpen(false)}>
-                <Text style={{ color: palette.muted }}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                className="rounded-xl px-4 py-2"
-                style={{ backgroundColor: palette.action }}
-                onPress={() => void sendGifFromModal()}
-              >
-                <Text className="font-semibold text-white">Send</Text>
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="text-base font-semibold" style={{ color: palette.text }}>
+                GIFs
+              </Text>
+              <Pressable accessibilityLabel="Close GIF picker" onPress={() => setGifModalOpen(false)} hitSlop={12}>
+                <Ionicons name="close" size={24} color={palette.muted} />
               </Pressable>
             </View>
+
+            {!GIPHY_API_KEY ? (
+              <Text className="text-sm leading-5" style={{ color: palette.muted }}>
+                Add{' '}
+                <Text style={{ fontFamily: 'monospace', color: palette.text }}>EXPO_PUBLIC_GIPHY_API_KEY</Text> to your
+                .env file, restart Metro with a clean cache if needed, then reopen this picker.
+              </Text>
+            ) : (
+              <>
+                <TextInput
+                  placeholder="Search Giphy…"
+                  placeholderTextColor={palette.placeholder}
+                  className="mb-2 rounded-xl border p-3"
+                  style={{ borderColor: palette.border, color: palette.text }}
+                  value={gifQuery}
+                  onChangeText={setGifQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                <Text className="mb-2 text-[11px]" style={{ color: palette.muted }}>
+                  Trending when search is empty. Content rating: PG-13.
+                </Text>
+                {gifFetchError ? (
+                  <Text className="mb-2 text-sm" style={{ color: '#e5484d' }}>
+                    {gifFetchError}
+                  </Text>
+                ) : null}
+                {gifLoading && gifResults.length === 0 ? (
+                  <View className="py-8">
+                    <ActivityIndicator size="large" color={palette.action} />
+                  </View>
+                ) : null}
+                <FlatList
+                  data={gifResults}
+                  keyExtractor={(item) => item.id}
+                  numColumns={3}
+                  scrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                  columnWrapperStyle={{ gap: 8, marginBottom: 8 }}
+                  contentContainerStyle={{ paddingBottom: 20 }}
+                  ListEmptyComponent={
+                    !gifLoading ? (
+                      <Text className="py-6 text-center text-sm" style={{ color: palette.muted }}>
+                        No GIFs found.
+                      </Text>
+                    ) : null
+                  }
+                  renderItem={({ item }) => (
+                    <Pressable
+                      accessibilityLabel={item.title}
+                      onPress={() => void sendGifByUrl(item.gifUrl)}
+                      style={{
+                        width: gifCellSize,
+                        height: gifCellSize,
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        backgroundColor: palette.card
+                      }}
+                    >
+                      <Image
+                        source={{ uri: item.previewUrl }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  )}
+                  ListFooterComponent={
+                    <Pressable
+                      className="mt-2 flex-row items-center justify-center py-2"
+                      onPress={() => void Linking.openURL('https://giphy.com/')}
+                    >
+                      <Text className="text-[11px]" style={{ color: palette.muted }}>
+                        Powered by GIPHY
+                      </Text>
+                    </Pressable>
+                  }
+                />
+              </>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
