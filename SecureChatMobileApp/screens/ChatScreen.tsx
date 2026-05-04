@@ -37,6 +37,7 @@ import { decodeJwtSub } from '../lib/jwtDecode';
 import { normalizeUserId, sameUserId } from '../lib/userIds';
 import { GIPHY_API_KEY } from '../config';
 import { giphySearch, type GiphyGifItem } from '../services/giphyApi';
+import { filterStaticGifs } from '../services/giphyFallback';
 
 type ChatScreenProps = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -662,8 +663,8 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
         }
       } catch (e) {
         if (!cancelled) {
-          setGifResults([]);
           setGifFetchError(e instanceof Error ? e.message : 'Could not load GIFs');
+          setGifResults(filterStaticGifs(''));
         }
       } finally {
         if (!cancelled) {
@@ -675,6 +676,16 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
       cancelled = true;
     };
   }, [gifModalOpen, debouncedGifQuery, GIPHY_API_KEY]);
+
+  /** No Giphy key: still show a tappable grid (curated CDN URLs), optional local search. */
+  useEffect(() => {
+    if (!gifModalOpen || GIPHY_API_KEY) {
+      return;
+    }
+    setGifLoading(false);
+    setGifFetchError(null);
+    setGifResults(filterStaticGifs(gifQuery));
+  }, [gifModalOpen, gifQuery, GIPHY_API_KEY]);
 
   const sendGifByUrl = useCallback(
     async (url: string) => {
@@ -847,93 +858,101 @@ const ChatScreenContent: React.FC<ChatScreenContentProps> = ({ conversationId, n
             onPress={(e) => e.stopPropagation()}
           >
             <View className="mb-3 flex-row items-center justify-between">
-              <Text className="text-base font-semibold" style={{ color: palette.text }}>
-                GIFs
-              </Text>
+              <View className="flex-1 pr-2">
+                <Text className="text-base font-semibold" style={{ color: palette.text }}>
+                  Pick a GIF
+                </Text>
+                <Text className="mt-0.5 text-[12px]" style={{ color: palette.muted }}>
+                  Tap a thumbnail to send — no link pasting.
+                </Text>
+              </View>
               <Pressable accessibilityLabel="Close GIF picker" onPress={() => setGifModalOpen(false)} hitSlop={12}>
                 <Ionicons name="close" size={24} color={palette.muted} />
               </Pressable>
             </View>
 
             {!GIPHY_API_KEY ? (
-              <Text className="text-sm leading-5" style={{ color: palette.muted }}>
-                Add{' '}
-                <Text style={{ fontFamily: 'monospace', color: palette.text }}>EXPO_PUBLIC_GIPHY_API_KEY</Text> to your
-                .env file, restart Metro with a clean cache if needed, then reopen this picker.
+              <Text className="mb-2 rounded-xl border p-2.5 text-[12px] leading-[17px]" style={{ borderColor: palette.border, color: palette.muted }}>
+                Showing a small built-in set. Add{' '}
+                <Text style={{ fontFamily: 'monospace', color: palette.text }}>EXPO_PUBLIC_GIPHY_API_KEY</Text> for full
+                Giphy search and trending (restart Metro after changing .env).
               </Text>
             ) : (
-              <>
-                <TextInput
-                  placeholder="Search Giphy…"
-                  placeholderTextColor={palette.placeholder}
-                  className="mb-2 rounded-xl border p-3"
-                  style={{ borderColor: palette.border, color: palette.text }}
-                  value={gifQuery}
-                  onChangeText={setGifQuery}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="search"
-                />
-                <Text className="mb-2 text-[11px]" style={{ color: palette.muted }}>
-                  Trending when search is empty. Content rating: PG-13.
-                </Text>
-                {gifFetchError ? (
-                  <Text className="mb-2 text-sm" style={{ color: '#e5484d' }}>
-                    {gifFetchError}
-                  </Text>
-                ) : null}
-                {gifLoading && gifResults.length === 0 ? (
-                  <View className="py-8">
-                    <ActivityIndicator size="large" color={palette.action} />
-                  </View>
-                ) : null}
-                <FlatList
-                  data={gifResults}
-                  keyExtractor={(item) => item.id}
-                  numColumns={3}
-                  scrollEnabled
-                  keyboardShouldPersistTaps="handled"
-                  columnWrapperStyle={{ gap: 8, marginBottom: 8 }}
-                  contentContainerStyle={{ paddingBottom: 20 }}
-                  ListEmptyComponent={
-                    !gifLoading ? (
-                      <Text className="py-6 text-center text-sm" style={{ color: palette.muted }}>
-                        No GIFs found.
-                      </Text>
-                    ) : null
-                  }
-                  renderItem={({ item }) => (
-                    <Pressable
-                      accessibilityLabel={item.title}
-                      onPress={() => void sendGifByUrl(item.gifUrl)}
-                      style={{
-                        width: gifCellSize,
-                        height: gifCellSize,
-                        borderRadius: 10,
-                        overflow: 'hidden',
-                        backgroundColor: palette.card
-                      }}
-                    >
-                      <Image
-                        source={{ uri: item.previewUrl }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
-                      />
-                    </Pressable>
-                  )}
-                  ListFooterComponent={
-                    <Pressable
-                      className="mt-2 flex-row items-center justify-center py-2"
-                      onPress={() => void Linking.openURL('https://giphy.com/')}
-                    >
-                      <Text className="text-[11px]" style={{ color: palette.muted }}>
-                        Powered by GIPHY
-                      </Text>
-                    </Pressable>
-                  }
-                />
-              </>
+              <Text className="mb-2 text-[11px]" style={{ color: palette.muted }}>
+                Search or scroll. Rating: PG-13.
+              </Text>
             )}
+
+            <TextInput
+              placeholder={GIPHY_API_KEY ? 'Search Giphy…' : 'Filter built-in GIFs…'}
+              placeholderTextColor={palette.placeholder}
+              className="mb-2 rounded-xl border p-3"
+              style={{ borderColor: palette.border, color: palette.text }}
+              value={gifQuery}
+              onChangeText={setGifQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+
+            {gifFetchError && GIPHY_API_KEY ? (
+              <Text className="mb-2 text-sm" style={{ color: '#e5484d' }}>
+                {gifFetchError}
+              </Text>
+            ) : null}
+
+            {gifLoading && gifResults.length === 0 && GIPHY_API_KEY ? (
+              <View className="py-8">
+                <ActivityIndicator size="large" color={palette.action} />
+              </View>
+            ) : null}
+
+            <FlatList
+              data={gifResults}
+              keyExtractor={(item) => item.id}
+              numColumns={3}
+              scrollEnabled
+              keyboardShouldPersistTaps="handled"
+              style={{ maxHeight: Dimensions.get('window').height * 0.48 }}
+              columnWrapperStyle={{ gap: 8, marginBottom: 8 }}
+              contentContainerStyle={{ paddingBottom: 20 }}
+              ListEmptyComponent={
+                !gifLoading ? (
+                  <Text className="py-6 text-center text-sm" style={{ color: palette.muted }}>
+                    No GIFs match.
+                  </Text>
+                ) : null
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  accessibilityLabel={item.title}
+                  onPress={() => void sendGifByUrl(item.gifUrl)}
+                  style={{
+                    width: gifCellSize,
+                    height: gifCellSize,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    backgroundColor: palette.card
+                  }}
+                >
+                  <Image
+                    source={{ uri: item.previewUrl }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                  />
+                </Pressable>
+              )}
+              ListFooterComponent={
+                <Pressable
+                  className="mt-2 flex-row items-center justify-center py-2"
+                  onPress={() => void Linking.openURL('https://giphy.com/')}
+                >
+                  <Text className="text-[11px]" style={{ color: palette.muted }}>
+                    Powered by GIPHY
+                  </Text>
+                </Pressable>
+              }
+            />
           </Pressable>
         </Pressable>
       </Modal>

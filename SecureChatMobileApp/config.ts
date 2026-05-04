@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 type ExpoExtra = {
   apiUrl?: string;
   graphqlUrl?: string;
+  giphyApiKey?: string;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as ExpoExtra;
@@ -35,8 +36,8 @@ const GRAPHQL_URL = (
 const SIGNALR_URL = `${API_URL}/hubs/messaging`;
 const CALL_HUB_URL = `${API_URL}/hubs/call`;
 
-/** Giphy search (GIF picker). Set `EXPO_PUBLIC_GIPHY_API_KEY` in `.env`; never commit real keys. */
-const GIPHY_API_KEY = trim(process.env.EXPO_PUBLIC_GIPHY_API_KEY);
+/** Giphy search (GIF picker). Prefer Metro `.env`, then `app.config.js` → `extra.giphyApiKey` (EAS). */
+const GIPHY_API_KEY = trim(process.env.EXPO_PUBLIC_GIPHY_API_KEY) || trim(extra.giphyApiKey);
 
 if (typeof __DEV__ !== 'undefined' && __DEV__) {
   console.log('[SecureChat] API_URL=', API_URL, '| GRAPHQL_URL=', GRAPHQL_URL, '| CALL_HUB_URL=', CALL_HUB_URL);

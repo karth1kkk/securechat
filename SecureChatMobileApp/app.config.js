@@ -22,13 +22,16 @@ const normalizedGraphql = explicitGraphql
   ? explicitGraphql.replace(/\/graphql\/?$/i, '/graphql')
   : undefined;
 
+const giphyKey = trim(process.env.EXPO_PUBLIC_GIPHY_API_KEY);
+
 module.exports = {
   expo: {
     ...appJson.expo,
     extra: {
       ...(appJson.expo.extra || {}),
       ...(normalizedApi && { apiUrl: normalizedApi }),
-      ...(normalizedGraphql && { graphqlUrl: normalizedGraphql })
+      ...(normalizedGraphql && { graphqlUrl: normalizedGraphql }),
+      ...(giphyKey && { giphyApiKey: giphyKey })
     }
   }
 };

@@ -83,7 +83,7 @@ async function parseList(res: Response): Promise<GiphyGifItem[]> {
 export async function giphyTrending(apiKey: string): Promise<GiphyGifItem[]> {
   const url = new URL(`${BASE}/trending`);
   url.searchParams.set('api_key', apiKey);
-  url.searchParams.set('limit', '30');
+  url.searchParams.set('limit', '48');
   url.searchParams.set('rating', 'pg-13');
   const res = await fetch(url.toString());
   return parseList(res);
@@ -97,7 +97,7 @@ export async function giphySearch(apiKey: string, query: string): Promise<GiphyG
   const url = new URL(`${BASE}/search`);
   url.searchParams.set('api_key', apiKey);
   url.searchParams.set('q', q);
-  url.searchParams.set('limit', '30');
+  url.searchParams.set('limit', '48');
   url.searchParams.set('rating', 'pg-13');
   url.searchParams.set('lang', 'en');
   const res = await fetch(url.toString());
