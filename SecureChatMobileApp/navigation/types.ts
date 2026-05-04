@@ -18,7 +18,6 @@ export type RootStackParamList = {
   SecureChatNetwork: undefined;
   Appearance: undefined;
   ConversationsSettings: undefined;
-  Donate: undefined;
   MessageRequests: undefined;
   RecoveryPassword: undefined;
   Help: undefined;

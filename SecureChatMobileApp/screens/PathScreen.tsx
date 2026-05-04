@@ -142,45 +142,120 @@ function formatNodeMeta(node: NetworkNode): string | undefined {
   return parts.join(' · ');
 }
 
-/** Secondary line under each hop: prefer AWS region + AZ on the first service hop (API tier). */
+function serviceHopIndices(pathNodes: NetworkNode[]): number[] {
+  return pathNodes
+    .map((n, i) => (normalizeRole(n.role) === 'service' ? i : -1))
+    .filter((i): i is number => i >= 0);
+}
+
+/** Secondary line under each hop: AWS region/AZ on API tier; sensible fallbacks when the API omits node.region (common on older hosts). */
 function buildHopSubtitle(
   node: NetworkNode,
   index: number,
   kind: 'you' | 'entry' | 'service' | 'relay' | 'destination',
   info: SecureChatNetworkInfoPayload | undefined,
   pathNodes: NetworkNode[]
-): string | undefined {
+): string {
+  const region = info?.apiRegion?.trim();
+  const az = info?.apiAvailabilityZone?.trim();
+  const meta = formatNodeMeta(node);
+
   if (kind === 'you') {
     return 'This device';
   }
 
-  const firstServiceIdx = pathNodes.findIndex((n) => normalizeRole(n.role) === 'service');
-  const isPrimaryServiceHop = kind === 'service' && index === firstServiceIdx && firstServiceIdx >= 0;
-
-  if (isPrimaryServiceHop) {
-    const region = info?.apiRegion?.trim();
-    const az = info?.apiAvailabilityZone?.trim();
-    if (region && az) {
-      return `${region} · ${az}`;
+  if (kind === 'entry') {
+    if (meta) {
+      return meta;
     }
     if (region) {
       return region;
     }
+    return 'Application load balancer';
+  }
+
+  if (kind === 'service') {
+    const svcIdx = serviceHopIndices(pathNodes);
+    const ordinal = svcIdx.indexOf(index);
+
+    if (ordinal === 0) {
+      if (region && az) {
+        return `${region} · ${az}`;
+      }
+      if (region) {
+        return region;
+      }
+      if (az) {
+        return az;
+      }
+      if (meta) {
+        return meta;
+      }
+      return 'SecureChat API';
+    }
+
+    if (meta) {
+      return meta;
+    }
+
+    const label = node.label?.trim();
+    const primaryLine =
+      region && az ? `${region} · ${az}` : region ? region : az ? az : '';
+    const firstSvcIdx = svcIdx[0];
+    const firstLine =
+      firstSvcIdx !== undefined
+        ? buildHopSubtitle(pathNodes[firstSvcIdx]!, firstSvcIdx, 'service', info, pathNodes)
+        : '';
+
+    if (primaryLine && primaryLine !== firstLine) {
+      return primaryLine;
+    }
+    if (label) {
+      return `${label}${region ? ` · ${region}` : ''}`;
+    }
+    if (region && az) {
+      return `${region} · ${az}`;
+    }
+    if (region) {
+      return `${region} · same Region`;
+    }
     if (az) {
       return az;
     }
+    return 'Realtime / internal tier';
   }
 
-  const meta = formatNodeMeta(node);
-  if (meta) {
-    return meta;
+  if (kind === 'relay') {
+    if (meta) {
+      return meta;
+    }
+    if (region) {
+      return `Same AWS region · ${region}`;
+    }
+    return 'Relay path';
   }
 
-  if (kind === 'entry' && info?.apiRegion?.trim()) {
-    return info.apiRegion.trim();
+  if (kind === 'destination') {
+    if (meta) {
+      return meta;
+    }
+    if (region && az) {
+      return `Amazon RDS · ${region} · ${az}`;
+    }
+    if (region) {
+      return `Amazon RDS · ${region}`;
+    }
+    if (az) {
+      return `Data store · ${az}`;
+    }
+    const label = node.label?.trim();
+    if (label) {
+      return label;
+    }
+    return 'Encrypted PostgreSQL';
   }
 
-  return undefined;
+  return meta ?? region ?? '—';
 }
 
 const DOT_YOU = 16;
@@ -315,21 +390,31 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
 
   const lastIndex = pathNodes.length - 1;
 
+  const pathMaxWidth = 340;
+
   return (
     <ScrollView
       className="flex-1"
       style={{ backgroundColor: palette.background }}
-      contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40, flexGrow: 1 }}
+      contentContainerStyle={{
+        paddingHorizontal: 20,
+        paddingTop: 8,
+        paddingBottom: 40,
+        flexGrow: 1,
+        alignItems: 'center'
+      }}
       keyboardShouldPersistTaps="handled"
     >
-      <Text className="mb-8 text-[16px] leading-[24px]" style={{ color: palette.muted }}>
-        Session routes messages through several hops in its decentralized network. SecureChat uses TLS to this service
-        instead; the diagram below shows how your traffic reaches our infrastructure, including{' '}
-        <Text style={{ color: palette.text, fontWeight: '600' }}>AWS region</Text> and{' '}
-        <Text style={{ color: palette.text, fontWeight: '600' }}>availability zone</Text> where the API reports them.
-      </Text>
+      <View style={{ width: '100%', maxWidth: pathMaxWidth }}>
+        <Text className="mb-8 text-center text-[16px] leading-[24px]" style={{ color: palette.muted }}>
+          Session routes messages through several hops in its decentralized network. SecureChat uses TLS to this service
+          instead; the diagram below shows how your traffic reaches our infrastructure, including{' '}
+          <Text style={{ color: palette.text, fontWeight: '600' }}>AWS region</Text> and{' '}
+          <Text style={{ color: palette.text, fontWeight: '600' }}>availability zone</Text> where the API reports them.
+        </Text>
+      </View>
 
-      <View className="pb-6">
+      <View className="pb-6" style={{ width: '100%', maxWidth: pathMaxWidth, alignSelf: 'center' }}>
         {pathNodes.map((node, index) => {
           const kind = normalizeRole(node.role);
           const hopTitle = SESSION_ROLE_LABELS[kind] ?? node.label;
@@ -382,11 +467,9 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
                 >
                   {hopTitle}
                 </Text>
-                {subtitle ? (
-                  <Text className="mt-1 text-[14px] leading-[20px]" style={{ color: palette.muted }}>
-                    {subtitle}
-                  </Text>
-                ) : null}
+                <Text className="mt-1 text-[14px] leading-[20px]" style={{ color: palette.muted }}>
+                  {subtitle}
+                </Text>
               </View>
             </View>
           );

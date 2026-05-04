@@ -74,11 +74,6 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
   const menuSections: MenuItem[][] = [
     [
       {
-        label: 'Donate',
-        icon: 'heart',
-        onPress: () => navigation.navigate('Donate')
-      },
-      {
         label: 'Games',
         icon: 'grid',
         onPress: () => navigation.navigate('Games')
