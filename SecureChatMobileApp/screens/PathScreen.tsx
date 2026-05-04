@@ -22,6 +22,33 @@ type NetworkNode = {
   region?: string | null;
 };
 
+type SecureChatNetworkInfoPayload = {
+  apiRegion?: string | null;
+  apiAvailabilityZone?: string | null;
+  apiInstanceId?: string | null;
+  nodes?: NetworkNode[];
+};
+
+function formatAwsPlacementSummary(info: SecureChatNetworkInfoPayload | undefined): string | undefined {
+  if (!info) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (info.apiRegion?.trim()) {
+    parts.push(`Region ${info.apiRegion.trim()}`);
+  }
+  if (info.apiAvailabilityZone?.trim()) {
+    parts.push(`AZ ${info.apiAvailabilityZone.trim()}`);
+  }
+  if (info.apiInstanceId?.trim()) {
+    parts.push(`Instance ${info.apiInstanceId.trim()}`);
+  }
+  if (parts.length === 0) {
+    return undefined;
+  }
+  return parts.join(' · ');
+}
+
 function normalizeRole(role: string): 'you' | 'entry' | 'service' | 'relay' | 'destination' {
   const r = role.toUpperCase();
   if (r === 'YOU') return 'you';
@@ -72,7 +99,9 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
     }, [refetch])
   );
 
-  const pathNodes: NetworkNode[] = useMemo(() => data?.secureChatNetworkInfo?.nodes ?? [], [data]);
+  const networkInfo = data?.secureChatNetworkInfo as SecureChatNetworkInfoPayload | undefined;
+  const pathNodes: NetworkNode[] = useMemo(() => networkInfo?.nodes ?? [], [networkInfo]);
+  const awsSummary = useMemo(() => formatAwsPlacementSummary(networkInfo), [networkInfo]);
 
   useEffect(() => {
     Animated.loop(
@@ -152,9 +181,20 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
       <Text className="mb-2 text-[28px] font-bold" style={{ color: palette.text }}>
         Path
       </Text>
-      <Text className="mb-4 text-sm leading-5" style={{ color: palette.muted }}>
-        Hops between your device and the SecureChat service (from server configuration).
+      <Text className="mb-2 text-sm leading-5" style={{ color: palette.muted }}>
+        Hops between your device and the SecureChat service. Node regions and availability zones come from this API
+        host when running on AWS (ECS task metadata or EC2 IMDSv2); the load balancer spans multiple AZs.
       </Text>
+      {awsSummary ? (
+        <Text className="mb-4 text-sm font-medium leading-5" style={{ color: palette.text }}>
+          {awsSummary}
+        </Text>
+      ) : (
+        <Text className="mb-4 text-sm leading-5" style={{ color: palette.muted }}>
+          AWS placement (region / AZ / instance) was not reported — typical when the API runs locally or metadata is
+          unavailable.
+        </Text>
+      )}
       <View className="relative flex-1 pl-6">
         <View className="absolute bottom-6 left-[26px] top-7 w-0.5" style={{ backgroundColor: palette.border }} />
         {pathNodes.map((node, index) => {

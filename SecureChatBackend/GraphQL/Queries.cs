@@ -30,6 +30,8 @@ public sealed class Query
     {
         var o = options.Value;
         var apiRegion = AwsRuntimeInfo.ResolveApiRegion(o.ApiRegion);
+        var apiAz = AwsRuntimeInfo.ResolveApiAvailabilityZone();
+        var apiInstanceId = AwsRuntimeInfo.ResolveApiInstanceId();
         var deploymentId = AwsRuntimeInfo.ResolveDeploymentId(o.DeploymentId);
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
         var nodes = o.Nodes
@@ -38,18 +40,60 @@ public sealed class Query
                 Role = n.Role,
                 Label = n.Label,
                 CountryCode = n.CountryCode,
-                Region = n.Region
+                Region = EnrichPathNodeRegion(n.Role, n.Region, apiRegion, apiAz)
             })
             .ToList();
 
         return new SecureChatNetworkInfoDto
         {
             ApiRegion = apiRegion,
+            ApiAvailabilityZone = apiAz,
+            ApiInstanceId = apiInstanceId,
             Environment = environment.EnvironmentName,
             DeploymentId = deploymentId,
             Version = version,
             Nodes = nodes
         };
+    }
+
+    private static string? EnrichPathNodeRegion(
+        NetworkPathRole role,
+        string? configuredRegion,
+        string? apiRegion,
+        string? apiAvailabilityZone)
+    {
+        var trimmed = configuredRegion?.Trim();
+        if (!string.IsNullOrEmpty(trimmed))
+        {
+            return configuredRegion;
+        }
+
+        if (role == NetworkPathRole.You)
+        {
+            return configuredRegion;
+        }
+
+        if (role == NetworkPathRole.ServiceNode)
+        {
+            if (!string.IsNullOrEmpty(apiAvailabilityZone) && !string.IsNullOrEmpty(apiRegion))
+            {
+                return $"{apiRegion} · {apiAvailabilityZone}";
+            }
+
+            return string.IsNullOrEmpty(apiRegion) ? null : apiRegion;
+        }
+
+        if (role == NetworkPathRole.EntryNode)
+        {
+            return string.IsNullOrEmpty(apiRegion) ? null : $"{apiRegion} · multi-AZ (ALB)";
+        }
+
+        if (role == NetworkPathRole.Destination)
+        {
+            return string.IsNullOrEmpty(apiRegion) ? null : apiRegion;
+        }
+
+        return configuredRegion;
     }
 
     [GraphQLName("userBySessionId")]
