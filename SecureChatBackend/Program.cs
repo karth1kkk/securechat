@@ -236,9 +236,11 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddGraphQLServer()
-    // In development, return exception details to help debug "Unexpected Execution Error".
+    // Development/Staging: always include details. Production: set GraphQL:IncludeExceptionDetails=true (or env GraphQL__IncludeExceptionDetails=true) to debug.
     .ModifyRequestOptions(opt => opt.IncludeExceptionDetails =
-        builder.Environment.IsDevelopment() || builder.Environment.IsStaging())
+        builder.Environment.IsDevelopment()
+        || builder.Environment.IsStaging()
+        || builder.Configuration.GetValue("GraphQL:IncludeExceptionDetails", false))
     .AddAuthorization()
     .AddQueryType<Query>()
     .AddMutationType<Mutation>();
