@@ -7,12 +7,15 @@ const httpLink = new HttpLink({ uri: GRAPHQL_URL });
 
 const authLink = setContext(async (_, { headers }) => {
   const session = await sessionService.getSession();
-  return {
-    headers: {
-      ...headers,
-      Authorization: session?.jwtToken ? `Bearer ${session.jwtToken}` : undefined
-    }
-  };
+  const token = session?.jwtToken?.trim();
+  const next = { ...(headers as Record<string, string>) };
+  if (token) {
+    next.Authorization = `Bearer ${token}`;
+  } else {
+    delete next.Authorization;
+    delete next.authorization;
+  }
+  return { headers: next };
 });
 
 export const apolloClient = new ApolloClient({

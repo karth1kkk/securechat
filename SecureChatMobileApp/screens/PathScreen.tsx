@@ -127,22 +127,54 @@ function awsComponentHintForNode(
   return null;
 }
 
-function describePathLoadError(error: ApolloError): { detail: string; hint?: string } {
+function extractNetworkErrorBody(error: ApolloError): string | undefined {
+  const ne = error.networkError as {
+    statusCode?: number;
+    bodyText?: string;
+    result?: unknown;
+  } | null;
+  if (!ne) {
+    return undefined;
+  }
+  if (typeof ne.bodyText === 'string' && ne.bodyText.length > 0) {
+    return ne.bodyText.slice(0, 1600);
+  }
+  if (ne.result != null) {
+    try {
+      return JSON.stringify(ne.result).slice(0, 1600);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function describePathLoadError(error: ApolloError): { detail: string; hint?: string; networkBody?: string } {
   const gqlLines = error.graphQLErrors?.map((e) => e.message).filter(Boolean) ?? [];
+  const networkBody = extractNetworkErrorBody(error);
   const detail =
     gqlLines.length > 0 ? gqlLines.join('\n') : error.message || 'Request failed';
-  const looksLikeMissingField =
-    gqlLines.some(
-      (m) =>
-        m.includes('does not exist') ||
-        m.includes('Unknown field') ||
-        m.includes('secureChatNetworkInfo')
-    ) ||
-    (error.networkError && 'statusCode' in error.networkError && error.networkError.statusCode === 400);
-  const hint = looksLikeMissingField
-    ? 'The Path screen needs the latest SecureChat backend (GraphQL field secureChatNetworkInfo). Stop the API, run dotnet build in SecureChatBackend, start it again, and confirm GRAPHQL_URL in .env matches that process.'
-    : undefined;
-  return { detail, hint };
+
+  const looksLikeSchemaMismatch = gqlLines.some(
+    (m) =>
+      m.includes('does not exist') ||
+      m.includes('Unknown field') ||
+      m.includes('Cannot query field') ||
+      m.includes('secureChatNetworkInfo')
+  );
+
+  const status = error.networkError && 'statusCode' in error.networkError ? error.networkError.statusCode : undefined;
+
+  let hint: string | undefined;
+  if (looksLikeSchemaMismatch) {
+    hint =
+      'The API schema does not match this app build. Set EXPO_PUBLIC_GRAPHQL_URL to https://your-host/graphql for the SecureChat backend you deploy, clear cache, rebuild the web bundle, and confirm the server image includes the current GraphQL schema.';
+  } else if (status === 400) {
+    hint =
+      'HTTP 400 often means a bad GraphQL request (wrong URL, or an invalid Authorization header). In DevTools → Network, open the failed graphql POST and read Response. Try clearing site data if a stale JWT is sent.';
+  }
+
+  return { detail, hint, networkBody };
 }
 
 export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Path'>> = () => {
@@ -199,7 +231,9 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
 
   if (error) {
     const apollo = error instanceof ApolloError ? error : null;
-    const { detail, hint } = apollo ? describePathLoadError(apollo) : { detail: error.message, hint: undefined };
+    const { detail, hint, networkBody } = apollo
+      ? describePathLoadError(apollo)
+      : { detail: error.message, hint: undefined, networkBody: undefined };
     return (
       <View className="flex-1 items-center justify-center p-5" style={{ backgroundColor: palette.background }}>
         <Text className="text-lg font-semibold" style={{ color: palette.text }}>
@@ -208,6 +242,15 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
         <Text className="mt-2 text-center text-sm" style={{ color: palette.muted }}>
           {detail}
         </Text>
+        {networkBody ? (
+          <Text
+            selectable
+            className="mt-2 max-h-48 w-full rounded-lg border p-2 font-mono text-[11px] leading-4"
+            style={{ color: palette.text, borderColor: palette.border, backgroundColor: palette.surface }}
+          >
+            {networkBody}
+          </Text>
+        ) : null}
         {hint ? (
           <Text className="mt-3 text-center text-[13px] leading-[18px]" style={{ color: palette.muted }}>
             {hint}
