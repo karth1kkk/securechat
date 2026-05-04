@@ -248,6 +248,18 @@ builder.Services.AddGraphQLServer()
 
 var app = builder.Build();
 
+var applyMigrationsOnStartup = app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", false);
+if (applyMigrationsOnStartup)
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<SecureChatDbContext>();
+    if (db.Database.IsRelational())
+    {
+        db.Database.Migrate();
+        Console.WriteLine("Database migrations applied (Database:ApplyMigrationsOnStartup).");
+    }
+}
+
 if (useForwardedHeaders)
 {
     app.UseForwardedHeaders();
