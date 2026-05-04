@@ -97,6 +97,11 @@ const SecureChatApp: React.FC = () => {
     } catch (error) {
       if (error instanceof ApolloError) {
         console.error('Apollo graphQLErrors', JSON.stringify(error.graphQLErrors, null, 2));
+        error.graphQLErrors?.forEach((e, i) => {
+          if (e.extensions && Object.keys(e.extensions).length > 0) {
+            console.error(`Apollo graphQLErrors[${i}].extensions`, e.extensions);
+          }
+        });
         console.error('Apollo networkError', error.networkError);
       }
       console.error('Secure session init failed', error);

@@ -241,6 +241,7 @@ builder.Services.AddGraphQLServer()
         builder.Environment.IsDevelopment()
         || builder.Environment.IsStaging()
         || builder.Configuration.GetValue("GraphQL:IncludeExceptionDetails", false))
+    .AddErrorFilter<GraphQLLoggingErrorFilter>()
     .AddAuthorization()
     .AddQueryType<Query>()
     .AddMutationType<Mutation>();
