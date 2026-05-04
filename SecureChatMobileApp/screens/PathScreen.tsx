@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, Animated, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { ApolloError, useQuery } from '@apollo/client';
@@ -26,27 +26,67 @@ type SecureChatNetworkInfoPayload = {
   apiRegion?: string | null;
   apiAvailabilityZone?: string | null;
   apiInstanceId?: string | null;
+  environment?: string | null;
+  deploymentId?: string | null;
+  version?: string | null;
   nodes?: NetworkNode[];
 };
 
-function formatAwsPlacementSummary(info: SecureChatNetworkInfoPayload | undefined): string | undefined {
+function emDashWhenEmpty(value: string | null | undefined): string {
+  const t = value?.trim();
+  return t && t.length > 0 ? t : '—';
+}
+
+type AwsPlacementRow = { label: string; value: string; hint?: string };
+
+function buildAwsPlacementRows(info: SecureChatNetworkInfoPayload | undefined): AwsPlacementRow[] {
   if (!info) {
-    return undefined;
+    return [];
   }
-  const parts: string[] = [];
-  if (info.apiRegion?.trim()) {
-    parts.push(`Region ${info.apiRegion.trim()}`);
+  return [
+    {
+      label: 'AWS Region',
+      value: emDashWhenEmpty(info.apiRegion),
+      hint: 'Region for this API process (env or instance metadata).'
+    },
+    {
+      label: 'Availability zone',
+      value: emDashWhenEmpty(info.apiAvailabilityZone),
+      hint: 'Single AZ where this API runs on EC2/ECS. ALB below spans every AZ you enabled on the load balancer.'
+    },
+    {
+      label: 'EC2 instance',
+      value: emDashWhenEmpty(info.apiInstanceId),
+      hint: 'Instance running the API container when reported (IMDS or EC2_INSTANCE_ID).'
+    },
+    {
+      label: 'Deployment',
+      value: emDashWhenEmpty(info.deploymentId),
+      hint: 'Task ARN on ECS, or instance id / label from configuration.'
+    },
+    {
+      label: 'Environment',
+      value: emDashWhenEmpty(info.environment),
+      hint: 'ASPNETCORE_ENVIRONMENT for this API.'
+    },
+    {
+      label: 'API version',
+      value: emDashWhenEmpty(info.version),
+      hint: 'Assembly version of the running backend.'
+    }
+  ];
+}
+
+function awsPlacementReported(info: SecureChatNetworkInfoPayload | undefined): boolean {
+  if (!info) {
+    return false;
   }
-  if (info.apiAvailabilityZone?.trim()) {
-    parts.push(`AZ ${info.apiAvailabilityZone.trim()}`);
-  }
-  if (info.apiInstanceId?.trim()) {
-    parts.push(`Instance ${info.apiInstanceId.trim()}`);
-  }
-  if (parts.length === 0) {
-    return undefined;
-  }
-  return parts.join(' · ');
+  return Boolean(
+    info.apiRegion?.trim() ||
+      info.apiAvailabilityZone?.trim() ||
+      info.apiInstanceId?.trim() ||
+      info.deploymentId?.trim()
+  );
 }
 
 function normalizeRole(role: string): 'you' | 'entry' | 'service' | 'relay' | 'destination' {
@@ -65,6 +105,26 @@ function formatNodeMeta(node: NetworkNode): string | undefined {
     return undefined;
   }
   return parts.join(' · ');
+}
+
+function awsComponentHintForNode(
+  kind: 'you' | 'entry' | 'service' | 'relay' | 'destination',
+  apiAz: string | null | undefined
+): string | null {
+  if (kind === 'entry') {
+    return 'AWS: Application Load Balancer (HTTPS, ACM). Distributes requests across targets in each enabled AZ.';
+  }
+  if (kind === 'service') {
+    const az = apiAz?.trim();
+    if (az) {
+      return `AWS: API host in ${az} (see placement above).`;
+    }
+    return 'AWS: API & GraphQL on this host (AZ above when reported).';
+  }
+  if (kind === 'destination') {
+    return 'AWS: Amazon RDS for PostgreSQL in this Region (Multi-AZ is configured in RDS, not shown here).';
+  }
+  return null;
 }
 
 function describePathLoadError(error: ApolloError): { detail: string; hint?: string } {
@@ -101,7 +161,8 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
 
   const networkInfo = data?.secureChatNetworkInfo as SecureChatNetworkInfoPayload | undefined;
   const pathNodes: NetworkNode[] = useMemo(() => networkInfo?.nodes ?? [], [networkInfo]);
-  const awsSummary = useMemo(() => formatAwsPlacementSummary(networkInfo), [networkInfo]);
+  const awsRows = useMemo(() => buildAwsPlacementRows(networkInfo), [networkInfo]);
+  const hasAwsPlacement = useMemo(() => awsPlacementReported(networkInfo), [networkInfo]);
 
   useEffect(() => {
     Animated.loop(
@@ -177,29 +238,58 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
   }
 
   return (
-    <View className="flex-1 p-5" style={{ backgroundColor: palette.background }}>
+    <ScrollView
+      className="flex-1"
+      style={{ backgroundColor: palette.background }}
+      contentContainerStyle={{ padding: 20, paddingBottom: 32, flexGrow: 1 }}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text className="mb-2 text-[28px] font-bold" style={{ color: palette.text }}>
         Path
       </Text>
-      <Text className="mb-2 text-sm leading-5" style={{ color: palette.muted }}>
-        Hops between your device and the SecureChat service. Node regions and availability zones come from this API
-        host when running on AWS (ECS task metadata or EC2 IMDSv2); the load balancer spans multiple AZs.
+      <Text className="mb-3 text-sm leading-5" style={{ color: palette.muted }}>
+        Hops from your device to SecureChat. The API reports its AWS Region and (when EC2/ECS metadata or env vars are
+        available) the single availability zone where this API process runs. The TLS entry hop is an Application Load
+        Balancer: it is regional and uses every AZ you attached to the listener subnets.
       </Text>
-      {awsSummary ? (
-        <Text className="mb-4 text-sm font-medium leading-5" style={{ color: palette.text }}>
-          {awsSummary}
+
+      <View className="mb-5 rounded-2xl border p-4" style={{ borderColor: palette.border, backgroundColor: palette.surface }}>
+        <Text className="mb-3 text-base font-semibold" style={{ color: palette.text }}>
+          {'AWS & placement'}
         </Text>
-      ) : (
-        <Text className="mb-4 text-sm leading-5" style={{ color: palette.muted }}>
-          AWS placement (region / AZ / instance) was not reported — typical when the API runs locally or metadata is
-          unavailable.
-        </Text>
-      )}
+        {awsRows.map((row) => (
+          <View key={row.label} className="mb-3 border-b pb-3 last:mb-0 last:border-b-0 last:pb-0" style={{ borderBottomColor: palette.border }}>
+            <Text className="text-xs font-semibold uppercase tracking-wide" style={{ color: palette.muted }}>
+              {row.label}
+            </Text>
+            <Text className="mt-1 text-[15px] leading-[22px]" style={{ color: palette.text }}>
+              {row.value}
+            </Text>
+            {row.hint ? (
+              <Text className="mt-1 text-[12px] leading-[16px]" style={{ color: palette.muted }}>
+                {row.hint}
+              </Text>
+            ) : null}
+          </View>
+        ))}
+        {!hasAwsPlacement ? (
+          <Text className="text-[13px] leading-[18px]" style={{ color: palette.muted }}>
+            Region / AZ / instance were not detected (common for local dev, or Docker without IMDS). On EC2 you can set
+            AWS_REGION, EC2_INSTANCE_ID, and optionally the AZ in env so this card fills in without IMDS from the
+            container network.
+          </Text>
+        ) : null}
+      </View>
+
+      <Text className="mb-2 text-sm font-semibold" style={{ color: palette.text }}>
+        Traffic path
+      </Text>
       <View className="relative flex-1 pl-6">
         <View className="absolute bottom-6 left-[26px] top-7 w-0.5" style={{ backgroundColor: palette.border }} />
         {pathNodes.map((node, index) => {
           const kind = normalizeRole(node.role);
           const meta = formatNodeMeta(node);
+          const awsHop = awsComponentHintForNode(kind, networkInfo?.apiAvailabilityZone);
           return (
             <View key={`${node.label}-${index}`} className="mb-6 flex-row items-start pl-3">
               <View className="w-[52px] items-center">
@@ -224,6 +314,11 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
                     {meta}
                   </Text>
                 ) : null}
+                {awsHop ? (
+                  <Text className="mt-1.5 text-[12px] leading-[16px]" style={{ color: palette.muted }}>
+                    {awsHop}
+                  </Text>
+                ) : null}
                 {kind === 'service' && (
                   <Text
                     className="mt-1.5 self-start rounded-xl border px-2.5 py-1 text-xs"
@@ -245,6 +340,6 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
           );
         })}
       </View>
-    </View>
+    </ScrollView>
   );
 };
