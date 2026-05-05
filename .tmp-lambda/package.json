@@ -1,0 +1,1 @@
+{"name":"securechat-enqueue-lambda","version":"1.0.0","type":"module","dependencies":{"@aws-sdk/client-sqs":"^3.804.0"}}
