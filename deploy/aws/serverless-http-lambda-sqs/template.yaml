@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SecureChat Task 2 - HTTP API -> Lambda -> SQS integration.
+  Includes X-Ray tracing on Lambda.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    MemorySize: 128
+    Timeout: 15
+    Tracing: Active
+
+Resources:
+  IngestionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-ingest"
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 1209600
+
+  HttpApiGateway:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: "$default"
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - "*"
+
+  EnqueueFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: lambda/
+      Handler: app.handler
+      Description: Receives POST /enqueue JSON and publishes to SQS.
+      # Learner Lab often blocks iam:CreateRole. Reuse the pre-provisioned LabRole.
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref IngestionQueue
+      Events:
+        EnqueuePost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApiGateway
+            Path: /enqueue
+            Method: POST
+
+Outputs:
+  HttpApiUrl:
+    Description: Invoke POST {url}/enqueue with JSON body
+    Value: !GetAtt HttpApiGateway.ApiEndpoint
+
+  IngestionQueueUrl:
+    Description: SQS queue URL
+    Value: !Ref IngestionQueue
+
+  IngestionQueueArn:
+    Description: SQS queue ARN
+    Value: !GetAtt IngestionQueue.Arn

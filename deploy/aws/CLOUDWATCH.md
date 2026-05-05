@@ -111,9 +111,15 @@ Skip this in a short lab if basic CPU + app logs are enough.
 
 ---
 
-## 6. X-Ray / Contributor Insights
+## 6. X-Ray (Task #2 requirement)
 
-Not required for SecureChat unless you adopt those products separately.
+For Task #2 Part 3 evidence, use [`XRAY.md`](XRAY.md) to capture:
+
+- Service map (API Gateway -> Lambda)
+- Trace latency timeline
+- Basic performance discussion
+
+CloudWatch + X-Ray screenshots together satisfy the monitoring section of the brief.
 
 ---
 

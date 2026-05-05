@@ -118,6 +118,9 @@ Point an **ALB** target group at **EC2:8080**, health check **`GET /health`**, *
 ### 6. Optional hardening
 
 - **CloudWatch** (logs, metrics, alarms for EC2 + Docker): [`deploy/aws/CLOUDWATCH.md`](deploy/aws/CLOUDWATCH.md).
+- **X-Ray** (service map/traces for Task #2 serverless path): [`deploy/aws/XRAY.md`](deploy/aws/XRAY.md).
+- **Task #2 serverless sample** (API Gateway + Lambda + SQS): [`deploy/aws/serverless-http-lambda-sqs`](deploy/aws/serverless-http-lambda-sqs).
+- **Task #2 report templates** (architecture + write-up): [`docs/task2`](docs/task2).
 - **WAF** in front of ALB for rate-based rules.
 - **CloudFront** in front of ALB for static edge caching (less critical for GraphQL/SignalR than for static assets).
 - **Private subnets** for ECS tasks with only ALB in public subnets.
