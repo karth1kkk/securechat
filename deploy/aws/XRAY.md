@@ -4,12 +4,30 @@ Use this guide for **CT071 Task #2 Part 3** performance evidence.
 
 ## Scope
 
-The serverless sample at `deploy/aws/serverless-http-lambda-sqs` already enables:
+### Serverless path (API Gateway + Lambda)
 
-- `Tracing: Active` for Lambda in `template.yaml`
-- API Gateway integration path to Lambda
+Turn on **Active tracing** on the Lambda and tracing on the HTTP API stage (`prod`). After that, POST several times to `/enqueue` and open **X-Ray → Service map**.
 
-This allows traces to appear in **AWS X-Ray Service map** after requests hit `/enqueue`.
+### SecureChat API on EC2/Docker (ASP.NET)
+
+Production config enables X-Ray in `appsettings.Production.json` under `Tracing:XRayEnabled`.
+
+The app sends segments to the X-Ray daemon over UDP. Run the official daemon on the same Docker network as the API:
+
+```bash
+# On the EC2 host
+sudo bash deploy/aws/start-xray-daemon.sh
+```
+
+Then run the API container on network `securechat-obs` with:
+
+- `AWS_XRAY_DAEMON_ADDRESS=xray-daemon:2000`
+
+Give the EC2 instance an IAM instance profile with **`AWSXRayDaemonWriteAccess`** so the daemon can call `xray:PutTraceSegments`.
+
+---
+
+The serverless sample at `deploy/aws/serverless-http-lambda-sqs` can also enable tracing in `template.yaml` if you deploy from that template.
 
 ## 1) Verify IAM permissions
 

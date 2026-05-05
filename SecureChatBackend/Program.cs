@@ -24,6 +24,9 @@ using SecureChatBackend.GraphQL;
 using SecureChatBackend.Hubs;
 using SecureChatBackend.Infrastructure.Data;
 using SecureChatBackend.Infrastructure.Repositories;
+using Amazon.XRay.Recorder.Core;
+using Amazon.XRay.Recorder.Handlers.AwsSdk;
+using Amazon.XRay.Recorder.Handlers.AspNetCore;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -240,6 +243,19 @@ builder.Services.AddCors(options =>
     });
 });
 
+var tracingXRayEnabled = builder.Configuration.GetValue("Tracing:XRayEnabled", false);
+var tracingSegmentName = builder.Configuration["Tracing:SegmentName"];
+if (string.IsNullOrWhiteSpace(tracingSegmentName))
+{
+    tracingSegmentName = "SecureChatBackend";
+}
+
+if (tracingXRayEnabled)
+{
+    AWSSDKHandler.RegisterXRayForAllServices();
+    AWSXRayRecorder.InitializeInstance(builder.Configuration);
+}
+
 builder.Services.AddGraphQLServer()
     // Development/Staging: always include details. Production: set GraphQL:IncludeExceptionDetails=true (or env GraphQL__IncludeExceptionDetails=true) to debug.
     .ModifyRequestOptions(opt => opt.IncludeExceptionDetails =
@@ -268,6 +284,11 @@ if (applyMigrationsOnStartup)
 if (useForwardedHeaders)
 {
     app.UseForwardedHeaders();
+}
+
+if (tracingXRayEnabled)
+{
+    app.UseXRay(tracingSegmentName);
 }
 
 app.UseRouting();

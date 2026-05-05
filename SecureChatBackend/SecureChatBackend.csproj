@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="AWSXRayRecorder.Handlers.AspNetCore" Version="2.13.0" />
+    <PackageReference Include="AWSXRayRecorder.Handlers.AwsSdk" Version="2.13.0" />
     <PackageReference Include="HotChocolate.AspNetCore" Version="15.1.12" />
     <PackageReference Include="HotChocolate.AspNetCore.Authorization" Version="15.1.12" />
     <PackageReference Include="HotChocolate.Data" Version="15.1.12" />
