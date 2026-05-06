@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   Text,
+  useWindowDimensions,
   View
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -16,13 +17,13 @@ import { API_URL, GRAPHQL_URL } from '../config';
 
 const PATH_INFO_URL = `${API_URL.replace(/\/$/, '')}/path-info`;
 
-/** Used when GET /path-info is 404 (API image not updated yet). No Authorization header — avoids JWT 400 on public field.
- *  Omits apiAvailabilityZone / apiInstanceId so older GraphQL schemas still accept the query; those show on GET /path-info once deployed.
- */
+/** Used when GET /path-info is 404 (API image not updated yet). No Authorization header — avoids JWT 400 on public field. */
 const PATH_FALLBACK_GRAPHQL = `
   query PathFallbackNetworkInfo {
     secureChatNetworkInfo {
       apiRegion
+      apiAvailabilityZone
+      apiInstanceId
       environment
       deploymentId
       version
@@ -179,6 +180,11 @@ function buildHopSubtitle(
     const ordinal = svcIdx.indexOf(index);
 
     if (ordinal === 0) {
+      // Prefer server-enriched node.region first — it bundles EC2/region/AZ/instance when IMDS/ECS exposes AZ,
+      // and avoids showing only bare apiRegion while dropping AZ when the GraphQL body omitted top-level AZ fields.
+      if (meta) {
+        return meta;
+      }
       if (region && az) {
         return `${region} · ${az}`;
       }
@@ -187,9 +193,6 @@ function buildHopSubtitle(
       }
       if (az) {
         return az;
-      }
-      if (meta) {
-        return meta;
       }
       return 'SecureChat API';
     }
@@ -264,6 +267,7 @@ const SEG_ABOVE = 14;
 const SEG_BELOW = 22;
 
 export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Path'>> = () => {
+  const { width: windowWidth } = useWindowDimensions();
   const { palette, preference } = useTheme();
   const isDark = preference.mode === 'dark';
   const trace = useMemo(() => pathTraceColors(isDark), [isDark]);
@@ -320,6 +324,22 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
     inputRange: [0, 1],
     outputRange: [1, 1.12]
   });
+
+  const { padH, contentMaxWidth, introFontSize, hopTitleSize, hopSubtitleSize } = useMemo(() => {
+    const isWide = windowWidth >= 768;
+    const isTablet = windowWidth >= 480;
+    const pad = isWide ? 40 : isTablet ? 28 : 20;
+    const inner = Math.max(windowWidth - pad * 2, 260);
+    const cap = isWide ? 680 : isTablet ? 560 : 420;
+    const maxW = Math.min(inner, cap);
+    return {
+      padH: pad,
+      contentMaxWidth: maxW,
+      introFontSize: isWide ? 17 : 16,
+      hopTitleSize: isWide ? 18 : 17,
+      hopSubtitleSize: isWide ? 15 : 14
+    };
+  }, [windowWidth]);
 
   if (loading && pathNodes.length === 0) {
     return (
@@ -390,23 +410,27 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
 
   const lastIndex = pathNodes.length - 1;
 
-  const pathMaxWidth = 340;
-
   return (
     <ScrollView
       className="flex-1"
       style={{ backgroundColor: palette.background }}
       contentContainerStyle={{
-        paddingHorizontal: 20,
-        paddingTop: 8,
+        paddingHorizontal: padH,
+        paddingTop: windowWidth >= 768 ? 16 : 8,
         paddingBottom: 40,
         flexGrow: 1,
-        alignItems: 'center'
+        alignItems: 'center',
+        width: '100%',
+        alignSelf: 'center',
+        maxWidth: Math.min(windowWidth, 920)
       }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ width: '100%', maxWidth: pathMaxWidth }}>
-        <Text className="mb-8 text-center text-[16px] leading-[24px]" style={{ color: palette.muted }}>
+      <View style={{ width: '100%', maxWidth: contentMaxWidth }}>
+        <Text
+          className="mb-8 text-center leading-[24px]"
+          style={{ color: palette.muted, fontSize: introFontSize, lineHeight: introFontSize * 1.45 }}
+        >
           Session routes messages through several hops in its decentralized network. SecureChat uses TLS to this service
           instead; the diagram below shows how your traffic reaches our infrastructure, including{' '}
           <Text style={{ color: palette.text, fontWeight: '600' }}>AWS region</Text> and{' '}
@@ -414,7 +438,7 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
         </Text>
       </View>
 
-      <View className="pb-6" style={{ width: '100%', maxWidth: pathMaxWidth, alignSelf: 'center' }}>
+      <View className="pb-6" style={{ width: '100%', maxWidth: contentMaxWidth, alignSelf: 'center' }}>
         {pathNodes.map((node, index) => {
           const kind = normalizeRole(node.role);
           const hopTitle = SESSION_ROLE_LABELS[kind] ?? node.label;
@@ -425,8 +449,8 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
           const showLineBelow = index < lastIndex;
 
           return (
-            <View key={`${node.role}-${node.label}-${index}`} className="flex-row">
-              <View className="items-center" style={{ width: 32 }}>
+            <View key={`${node.role}-${node.label}-${index}`} className="flex-row w-full">
+              <View className="items-center" style={{ width: windowWidth >= 768 ? 40 : 32 }}>
                 {showLineAbove ? (
                   <View style={{ width: 2, height: SEG_ABOVE, backgroundColor: trace.line }} />
                 ) : null}
@@ -460,14 +484,21 @@ export const PathScreen: React.FC<NativeStackScreenProps<RootStackParamList, 'Pa
                 ) : null}
               </View>
 
-              <View className="min-w-0 flex-1" style={{ paddingLeft: 14, paddingBottom: index < lastIndex ? 6 : 0 }}>
+              <View className="min-w-0 flex-1 shrink" style={{ paddingLeft: windowWidth >= 768 ? 18 : 14, paddingBottom: index < lastIndex ? 6 : 0 }}>
                 <Text
-                  className="text-[17px] font-semibold tracking-tight"
-                  style={{ color: palette.text, marginTop: showLineAbove ? -4 : 0 }}
+                  className="font-semibold tracking-tight"
+                  style={{ color: palette.text, marginTop: showLineAbove ? -4 : 0, fontSize: hopTitleSize }}
                 >
                   {hopTitle}
                 </Text>
-                <Text className="mt-1 text-[14px] leading-[20px]" style={{ color: palette.muted }}>
+                <Text
+                  className="mt-1"
+                  style={{
+                    color: palette.muted,
+                    fontSize: hopSubtitleSize,
+                    lineHeight: hopSubtitleSize * 1.45
+                  }}
+                >
                   {subtitle}
                 </Text>
               </View>

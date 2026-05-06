@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { preferencesService, DEFAULT_THEME } from '../services/preferencesService';
 import { sessionService } from '../services/sessionService';
@@ -14,6 +14,14 @@ const BULLETS = [
   'Your secure session, encryption keys, and JWT',
   'App PIN used to unlock SecureChat'
 ];
+
+function showNotice(title: string, message: string): void {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n\n${message}`);
+    return;
+  }
+  Alert.alert(title, message);
+}
 
 export const ClearDataScreen: React.FC = () => {
   const { palette } = useTheme();
@@ -30,16 +38,28 @@ export const ClearDataScreen: React.FC = () => {
       await sessionService.clearSession();
       await pinService.clearPin();
       await preferencesService.clearProfilePhoto();
-      Alert.alert('All data cleared', 'Close and reopen the app to create a new session.');
+      showNotice(
+        'All data cleared',
+        'Close and reopen the app (or refresh the browser tab on web) to create a new session.'
+      );
     } catch (error) {
       console.error('Clear data failed', error);
-      Alert.alert('Unable to clear data', 'Please try again.');
+      showNotice('Unable to clear data', 'Please try again.');
     } finally {
       setBusy(false);
     }
   };
 
   const confirm = () => {
+    if (Platform.OS === 'web') {
+      const ok = window.confirm(
+        'Clear all local data?\n\nThis cannot be undone. You will need to set up the app again.'
+      );
+      if (ok) {
+        void performClear();
+      }
+      return;
+    }
     Alert.alert(
       'Clear all local data?',
       'This cannot be undone. You will need to set up the app again.',

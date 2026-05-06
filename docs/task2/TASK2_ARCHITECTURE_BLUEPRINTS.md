@@ -7,7 +7,7 @@ Use this as the architecture section source for Part 1 and Part 3.
 ```mermaid
 flowchart LR
   U[Mobile/Web Client] --> ALB[Application Load Balancer]
-  ALB --> API[SecureChatBackend on EC2/ECS]
+  ALB --> API[SecureChatBackend on EC2<br/>Docker container]
   API --> DB[(Amazon RDS PostgreSQL)]
   API --> CW[CloudWatch Metrics/Logs]
 ```
@@ -17,7 +17,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   U[Mobile/Web Client] --> ALB[Application Load Balancer]
-  ALB --> API[SecureChatBackend on EC2/ECS]
+  ALB --> API[SecureChatBackend on EC2<br/>Docker container]
   API --> DB[(Amazon RDS PostgreSQL)]
 
   U --> APIGW[API Gateway HTTP API<br/>POST /enqueue]
@@ -27,8 +27,11 @@ flowchart LR
   API --> CW[CloudWatch]
   APIGW --> CW
   L --> CW
+  Q --> CW
+
   APIGW --> XR[X-Ray]
   L --> XR
+  API --> XR
 ```
 
 ## Numbered Sequence (appendix-ready)
@@ -50,6 +53,7 @@ sequenceDiagram
   G-->>C: 6) HTTP response
   G->>CW: 7) API metrics (logs if permitted)
   L->>CW: 8) Function metrics (logs if permitted)
+  Note over S,CW: SQS metrics also appear in CloudWatch
   G->>XR: 9) Trace segment
   L->>XR: 10) Trace segment
 ```
@@ -57,9 +61,9 @@ sequenceDiagram
 ## Architecture changes from Task #1 to Task #2
 
 1. Added a serverless ingestion path (`API Gateway -> Lambda -> SQS`) in parallel with the existing backend.
-2. Kept core SecureChat app flow on EC2/ECS + RDS, while offloading one integration flow to Lambda.
+2. Kept core SecureChat app flow on EC2 (Docker) + RDS, while offloading one integration flow to Lambda.
 3. Introduced queue-based decoupling with SQS to handle burst traffic more safely.
-4. Expanded observability from EC2 metrics to include API Gateway/Lambda metrics and X-Ray traces (CloudWatch Logs only when IAM permissions allow).
+4. Expanded observability from EC2 metrics to include API Gateway/Lambda/SQS metrics and X-Ray traces for both the serverless path and the EC2-hosted API (when enabled). CloudWatch Logs only where IAM permissions allow.
 
 ## Why this design fits the brief
 
@@ -80,5 +84,5 @@ In Learner Lab, some IAM/X-Ray admin APIs are restricted (for example `iam:GetPo
 
 - Why serverless was introduced and what flow it handles.
 - How SQS improves decoupling and resiliency under spikes.
-- Cost and operations tradeoff: always-on EC2/ECS vs pay-per-use Lambda.
+- Cost and operations tradeoff: always-on EC2 (Docker) vs pay-per-use Lambda.
 - Monitoring differences between baseline architecture and hybrid architecture.
