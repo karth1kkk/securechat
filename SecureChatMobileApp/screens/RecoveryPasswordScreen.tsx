@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { sessionService, SessionRecord } from '../services/sessionService';
 import { useTheme } from '../theme/ThemeContext';
+import { pinRecoveryService } from '../services/pinRecoveryService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecoveryPassword'>;
 
@@ -13,6 +14,8 @@ export const RecoveryPasswordScreen: React.FC<Props> = ({ navigation }) => {
   const { palette } = useTheme();
   const [session, setSession] = useState<SessionRecord | null>(null);
   const [copied, setCopied] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
 
   useEffect(() => {
     sessionService.getSession().then(setSession);
@@ -25,6 +28,21 @@ export const RecoveryPasswordScreen: React.FC<Props> = ({ navigation }) => {
     await Clipboard.setStringAsync(session.sessionId);
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
+  };
+
+  const copyRecoveryCode = async () => {
+    if (!recoveryCode) {
+      return;
+    }
+    await Clipboard.setStringAsync(recoveryCode);
+    setRecoveryCopied(true);
+    setTimeout(() => setRecoveryCopied(false), 1600);
+  };
+
+  const generateNewRecoveryCode = async () => {
+    const next = await pinRecoveryService.regenerateRecoveryCode();
+    setRecoveryCode(next);
+    setRecoveryCopied(false);
   };
 
   return (
@@ -59,6 +77,38 @@ export const RecoveryPasswordScreen: React.FC<Props> = ({ navigation }) => {
         >
           <Feather name="copy" size={18} color="#fff" />
           <Text className="ml-2 font-semibold text-white">{copied ? 'Copied' : 'Copy Session ID'}</Text>
+        </Pressable>
+      </View>
+
+      <View
+        className="mb-4 rounded-[18px] border p-4"
+        style={{ borderColor: palette.border, backgroundColor: palette.surface }}
+      >
+        <Text className="mb-2 text-sm font-semibold" style={{ color: palette.muted }}>
+          PIN Recovery Code
+        </Text>
+        <Text className="mb-2 text-sm leading-5" style={{ color: palette.text }}>
+          Recovery codes are stored as SHA-256 hashes and cannot be viewed later. Generate a new 16-digit code, then save it immediately.
+        </Text>
+        <Text className="text-sm leading-5" style={{ color: palette.text }} selectable>
+          {recoveryCode ?? 'No visible code yet. Generate one below.'}
+        </Text>
+        <Pressable
+          className="mt-3 flex-row items-center justify-center rounded-xl py-3"
+          style={{ backgroundColor: palette.action }}
+          onPress={() => void generateNewRecoveryCode()}
+        >
+          <Feather name="refresh-cw" size={18} color="#fff" />
+          <Text className="ml-2 font-semibold text-white">Generate New Recovery Code</Text>
+        </Pressable>
+        <Pressable
+          className="mt-3 flex-row items-center justify-center rounded-xl py-3"
+          style={{ backgroundColor: palette.action }}
+          onPress={copyRecoveryCode}
+          disabled={!recoveryCode}
+        >
+          <Feather name="copy" size={18} color="#fff" />
+          <Text className="ml-2 font-semibold text-white">{recoveryCopied ? 'Copied' : 'Copy Recovery Code'}</Text>
         </Pressable>
       </View>
 

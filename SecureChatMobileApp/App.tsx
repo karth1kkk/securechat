@@ -22,12 +22,14 @@ import { RecoveryPasswordScreen } from './screens/RecoveryPasswordScreen';
 import { HelpScreen } from './screens/HelpScreen';
 import { ClearDataScreen } from './screens/ClearDataScreen';
 import { NotificationsScreen } from './screens/NotificationsScreen';
+import { ChangePinScreen } from './screens/ChangePinScreen';
 import { GamesScreen } from './screens/GamesScreen';
 import { TicTacToeScreen } from './screens/TicTacToeScreen';
 import { sessionService, SessionRecord } from './services/sessionService';
 import { navigationRef } from './navigation/navigationRef';
 import { IncomingCallHandler } from './components/IncomingCallHandler';
 import { pinService } from './services/pinService';
+import { pinRecoveryService } from './services/pinRecoveryService';
 import { PinLock } from './components/PinLock';
 import { RootStackParamList } from './navigation/types';
 import { REGISTER_ANONYMOUS } from './graphql/mutations';
@@ -92,6 +94,9 @@ const SecureChatApp: React.FC = () => {
       setSessionReady(true);
       const storedPin = await pinService.getPin();
       setHasPin(!!storedPin);
+      if (storedPin) {
+        await pinRecoveryService.ensureRecoveryCodeInitialized();
+      }
       setLocked(true);
     } catch (error) {
       if (error instanceof ApolloError) {
@@ -122,9 +127,22 @@ const SecureChatApp: React.FC = () => {
 
   const handleCreate = async (pin: string) => {
     await pinService.setPin(pin);
+    const recoveryCode = await pinRecoveryService.regenerateRecoveryCode();
+    setHasPin(true);
+    return recoveryCode;
+  };
+
+  const handleForgotPinReset = async (recoveryCode: string, newPin: string) => {
+    const verified = await pinRecoveryService.verifyRecoveryCode(recoveryCode);
+    if (!verified) {
+      return { ok: false, error: 'Recovery code is incorrect.' };
+    }
+    await pinService.setPin(newPin);
     setHasPin(true);
     setLocked(false);
+    return { ok: true };
   };
+
 
   if (sessionError) {
     return (
@@ -204,6 +222,7 @@ const SecureChatApp: React.FC = () => {
           <Stack.Screen name="Help" component={HelpScreen} options={{ title: 'Help' }} />
           <Stack.Screen name="ClearData" component={ClearDataScreen} options={{ title: 'Clear data' }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+          <Stack.Screen name="ChangePin" component={ChangePinScreen} options={{ title: 'Change PIN' }} />
           <Stack.Screen name="Games" component={GamesScreen} options={{ title: 'Games' }} />
           <Stack.Screen name="TicTacToe" component={TicTacToeScreen} options={{ title: 'Tic-tac-toe' }} />
           </Stack.Navigator>
@@ -214,7 +233,12 @@ const SecureChatApp: React.FC = () => {
           />
         </NavigationContainer>
       </View>
-      <PinLock onUnlock={handleUnlock} onCreate={handleCreate} hasPin={hasPin} visible={locked} />
+      <PinLock
+        onUnlock={handleUnlock}
+        onCreate={handleCreate}
+        hasPin={hasPin}
+        visible={locked}
+      />
     </View>
   );
 };

@@ -103,6 +103,11 @@ export const SettingsScreen: React.FC<NativeStackScreenProps<RootStackParamList,
         onPress: () => navigation.navigate('SecurityCenter')
       },
       {
+        label: 'Change PIN',
+        icon: 'key',
+        onPress: () => navigation.navigate('ChangePin')
+      },
+      {
         label: 'Notifications',
         icon: 'bell',
         onPress: () => navigation.navigate('Notifications')

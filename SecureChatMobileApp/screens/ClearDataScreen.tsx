@@ -7,6 +7,7 @@ import { pinService } from '../services/pinService';
 import { sentMessagePlaintextService } from '../services/sentMessagePlaintextService';
 import { threadCachePersistence } from '../services/threadCachePersistence';
 import { useTheme } from '../theme/ThemeContext';
+import { pinRecoveryService } from '../services/pinRecoveryService';
 
 const BULLETS = [
   'Display name, profile photo, and theme preferences',
@@ -37,7 +38,14 @@ export const ClearDataScreen: React.FC = () => {
       await threadCachePersistence.clearAll();
       await sessionService.clearSession();
       await pinService.clearPin();
+      await pinRecoveryService.clearRecoveryCode();
       await preferencesService.clearProfilePhoto();
+      if (Platform.OS === 'web') {
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 250);
+        return;
+      }
       showNotice(
         'All data cleared',
         'Close and reopen the app (or refresh the browser tab on web) to create a new session.'
